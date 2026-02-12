@@ -1,137 +1,182 @@
-from typing import Any, Optional
+"""Base class for callbacks."""
 
-from ml_collections import ConfigDict
+from typing import Any, Generic, TypeVar
 
-from jax_trainer.datasets import DatasetModule
+from pydantic import BaseModel
+
+from jax_trainer.callbacks.config import CallbackConfig
+from jax_trainer.trainer.state import TrainState
 
 
-class Callback:
-    """Base class for callbacks."""
+OptionsConfigtype = TypeVar("OptionsConfigtype", bound=CallbackConfig)
 
-    def __init__(
-        self, config: ConfigDict, trainer: Any, data_module: Optional[DatasetModule] = None
+
+class Callback(Generic[OptionsConfigtype]):
+  """Base class for callbacks."""
+
+  def __init__(self, config: CallbackConfig) -> None:
+    """Base class for callbacks.
+
+    Args:
+        config: Configuration dictionary.
+        trainer: Trainer object.
+    """
+    self.__callback_config = config
+
+  @classmethod
+  def encapsulate_config(cls, options: dict[str, Any]) -> OptionsConfigtype:
+    """Translates a dictionary of options into a pydantic model."""
+
+  def on_training_start(self) -> None:
+    """Called at the beginning of training."""
+
+  def on_training_end(self) -> None:
+    """Called at the end of training."""
+
+  def on_training_epoch_start(self, epoch_idx: int) -> None:
+    """Called at the beginning of each training epoch.
+
+    Args:
+        train_state: The current training state.
+        epoch_idx: Index of the current epoch.
+    """
+    if (
+      self.__callback_config.every_n_epochs is not None
+      and epoch_idx % self.__callback_config.every_n_epochs != 0
     ):
-        """Base class for callbacks.
+      return
+    self.on_filtered_training_epoch_start(epoch_idx)
 
-        Args:
-            config: Configuration dictionary.
-            trainer: Trainer object.
-            data_module (optional): Data module object.
-        """
-        self.config = config
-        self.trainer = trainer
-        self.data_module = data_module
-        self.every_n_epochs = config.get("every_n_epochs", 1)
+  def on_filtered_training_epoch_start(self, epoch_idx: int) -> None:
+    """Called at the beginning of each `every_n_epochs` training epoch.
 
-    def on_training_start(self):
-        """Called at the beginning of training."""
-        pass
+    To be implemented by subclasses.
 
-    def on_training_end(self):
-        """Called at the end of training."""
-        pass
+    Args:
+        train_state: The current training state.
+        epoch_idx: Index of the current epoch.
+    """
 
-    def on_training_epoch_start(self, epoch_idx):
-        """Called at the beginning of each training epoch.
+  def on_training_epoch_end(
+    self,
+    # train_state: TrainState,
+    train_metrics: dict[str, float],
+    epoch_idx: int,
+  ) -> None:
+    """Called at the end of each training epoch.
 
-        Args:
-            epoch_idx: Index of the current epoch.
-        """
-        if epoch_idx % self.every_n_epochs != 0:
-            return
-        self.on_filtered_training_epoch_start(epoch_idx)
+    Args:
+        train_state: The current training state.
+        train_metrics: Dictionary of training metrics of the current epoch.
+        epoch_idx: Index of the current epoch.
+    """
+    if (
+      self.__callback_config.every_n_epochs is not None
+      and epoch_idx % self.__callback_config.every_n_epochs == 0
+    ):
+      self.on_filtered_training_epoch_end(train_metrics, epoch_idx)
 
-    def on_filtered_training_epoch_start(self, epoch_idx):
-        """Called at the beginning of each `every_n_epochs` training epoch. To be implemented by
-        subclasses.
+  def on_filtered_training_epoch_end(
+    self,
+    # train_state: TrainState,
+    train_metrics: dict[str, float],
+    epoch_idx: int,
+  ) -> None:
+    """Called at the end of each `every_n_epochs` training epoch.
 
-        Args:
-            epoch_idx: Index of the current epoch.
-        """
-        pass
+    To be implemented by subclasses.
 
-    def on_training_epoch_end(self, train_metrics, epoch_idx):
-        """Called at the end of each training epoch.
+    Args:
+        train_state: The current training state.
+        train_metrics: Dictionary of training metrics of the current epoch.
+    """
 
-        Args:
-            train_metrics: Dictionary of training metrics of the current epoch.
-            epoch_idx: Index of the current epoch.
-        """
-        if epoch_idx % self.every_n_epochs != 0:
-            return
-        self.on_filtered_training_epoch_end(train_metrics, epoch_idx)
+  def on_validation_epoch_start(
+    self,
+    # train_state: TrainState,
+    epoch_idx: int,
+  ) -> None:
+    """Called at the beginning of validation."""
+    if (
+      self.__callback_config.every_n_epochs is not None
+      and epoch_idx % self.__callback_config.every_n_epochs == 0
+    ):
+      self.on_filtered_validation_epoch_start(epoch_idx)
 
-    def on_filtered_training_epoch_end(self, train_metrics, epoch_idx):
-        """Called at the end of each `every_n_epochs` training epoch. To be implemented by
-        subclasses.
+  def on_filtered_validation_epoch_start(
+    self,
+    # train_state: TrainState,
+    epoch_idx: int,
+  ) -> None:
+    """Called at the beginning of `every_n_epochs` validation. To be implemented by subclasses.
 
-        Args:
-            train_metrics: Dictionary of training metrics of the current epoch.
-        """
-        pass
+    Args:
+        train_state: The current training state.
+        epoch_idx: Index of the current epoch.
+    """
 
-    def on_validation_epoch_start(self, epoch_idx):
-        """Called at the beginning of validation."""
-        if epoch_idx % self.every_n_epochs != 0:
-            return
-        self.on_filtered_validation_epoch_start(epoch_idx)
+  def on_validation_epoch_end(
+    self,
+    # train_state: TrainState,
+    eval_metrics: dict[str, float],
+    epoch_idx: int,
+  ) -> None:
+    """Called at the end of each validation epoch.
 
-    def on_filtered_validation_epoch_start(self, epoch_idx):
-        """Called at the beginning of `every_n_epochs` validation. To be implemented by subclasses.
+    Args:
+        train_state: The current training state.
+        eval_metrics: Dictionary of evaluation metrics of the current epoch.
+        epoch_idx: Index of the current epoch.
+    """
+    if (
+      self.__callback_config.every_n_epochs is not None
+      and epoch_idx % self.__callback_config.every_n_epochs != 0
+    ):
+      return
+    self.on_filtered_validation_epoch_end(eval_metrics, epoch_idx)
 
-        Args:
-            epoch_idx: Index of the current epoch.
-        """
-        pass
+  def on_filtered_validation_epoch_end(
+    self,
+    # train_state: TrainState,
+    eval_metrics: dict[str, float],
+    epoch_idx: int,
+  ) -> None:
+    """Called at the end of each `every_n_epochs` validation epoch.
 
-    def on_validation_epoch_end(self, eval_metrics, epoch_idx):
-        """Called at the end of each validation epoch.
+    To be implemented bysubclasses.
 
-        Args:
-            eval_metrics: Dictionary of evaluation metrics of the current epoch.
-            epoch_idx: Index of the current epoch.
-        """
-        if epoch_idx % self.every_n_epochs != 0:
-            return
-        self.on_filtered_validation_epoch_end(eval_metrics, epoch_idx)
+    Args:
+        train_state: The current training state.
+        eval_metrics: Dictionary of evaluation metrics of the current epoch.
+        epoch_idx: Index of the current epoch.
+    """
 
-    def on_filtered_validation_epoch_end(self, eval_metrics, epoch_idx):
-        """Called at the end of each `every_n_epochs` validation epoch. To be implemented by
-        subclasses.
+  def on_test_epoch_start(
+    self,
+    # train_state: TrainState,
+    epoch_idx: int,
+  ) -> None:
+    """Called at the beginning of testing.
 
-        Args:
-            eval_metrics: Dictionary of evaluation metrics of the current epoch.
-            epoch_idx: Index of the current epoch.
-        """
-        pass
+    To be implemented by subclasses.
+    """
 
-    def on_test_epoch_start(self, epoch_idx):
-        """Called at the beginning of testing.
+  def on_test_epoch_end(
+    self,
+    # train_state: TrainState,
+    test_metrics: dict[str, float],
+    epoch_idx: int,
+  ) -> None:
+    """Called at the end of each test epoch. To be implemented by subclasses.
 
-        To be implemented by subclasses.
-        """
-        pass
+    Args:
+        train_state: The current training state.
+        test_metrics: Dictionary of test metrics of the current epoch.
+        epoch_idx: Index of the current epoch.
+    """
 
-    def on_test_epoch_end(self, test_metrics, epoch_idx):
-        """Called at the end of each test epoch. To be implemented by subclasses.
+  def finalize(self, status: str | None = None) -> None:
+    """Called at the end of the whole training process.
 
-        Args:
-            test_metrics: Dictionary of test metrics of the current epoch.
-            epoch_idx: Index of the current epoch.
-        """
-        pass
-
-    def set_dataset(self, data_module: DatasetModule):
-        """Sets the data module.
-
-        Args:
-            data_module: Data module object.
-        """
-        self.data_module = data_module
-
-    def finalize(self, status: Optional[str] = None):
-        """Called at the end of the whole training process.
-
-        To be implemented by subclasses.
-        """
-        pass
+    To be implemented by subclasses.
+    """
