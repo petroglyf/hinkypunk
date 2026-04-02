@@ -59,30 +59,24 @@ class OptimizerBuilder:
     optimizer_name = self.optimizer_config.name
     optimizer_params = self.optimizer_config.params
     opt_class = None
-    if optimizer_name == OptimizerOptions.ADAM and isinstance(
-      optimizer_params, AdamParams
-    ):
+    if optimizer_name == OptimizerOptions.ADAM and isinstance(optimizer_params, AdamParams):
       opt_class = lambda sched: optax.adam(  # noqa: E731
-        sched,
+        learning_rate=sched,
         b1=optimizer_params.beta1,
         b2=optimizer_params.beta2,
         eps=optimizer_params.eps,
       )
-    elif optimizer_name == OptimizerOptions.ADAMW and isinstance(
-      optimizer_params, AdamwParams
-    ):
+    elif optimizer_name == OptimizerOptions.ADAMW and isinstance(optimizer_params, AdamwParams):
       opt_class = lambda sched: optax.adamw(  # noqa: E731
-        sched,
+        learning_rate=sched,
         b1=optimizer_params.beta1,
         b2=optimizer_params.beta2,
         eps=optimizer_params.eps,
         weight_decay=optimizer_params.weight_decay,
       )
-    elif optimizer_name == OptimizerOptions.SGD and isinstance(
-      optimizer_params, SGDParams
-    ):
+    elif optimizer_name == OptimizerOptions.SGD and isinstance(optimizer_params, SGDParams):
       opt_class = lambda sched: optax.sgd(  # noqa: E731
-        sched,
+        learning_rate=sched,
         momentum=optimizer_params.momentum,
         nesterov=optimizer_params.nesterov,
       )

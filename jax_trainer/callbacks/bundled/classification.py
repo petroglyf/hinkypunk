@@ -1,10 +1,10 @@
+import logging
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 
 # import seaborn as sns
-from absl import logging
 from pydantic import BaseModel, Field
 
 from jax_trainer.callbacks.callback import Callback, CallbackConfig
@@ -66,9 +66,7 @@ class ConfusionMatrixCallback(Callback):
     """Visualizes and logs the confusion matrix."""
     conf_key = [k for k in metrics if k.endswith("conf_matrix")]
     if len(conf_key) == 0:
-      logging.warning(
-        f"Confusion matrix not found in eval metrics, only found {metrics.keys()}."
-      )
+      logging.warning(f"Confusion matrix not found in eval metrics, only found {metrics.keys()}.")
       return
     conf_key = conf_key[0]
     conf_matrix = metrics[conf_key]

@@ -2,11 +2,7 @@
 
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel
-
 from jax_trainer.callbacks.config import CallbackConfig
-from jax_trainer.trainer.state import TrainState
-
 
 OptionsConfigtype = TypeVar("OptionsConfigtype", bound=CallbackConfig)
 
@@ -59,7 +55,6 @@ class Callback(Generic[OptionsConfigtype]):
 
   def on_training_epoch_end(
     self,
-    # train_state: TrainState,
     train_metrics: dict[str, float],
     epoch_idx: int,
   ) -> None:
@@ -78,7 +73,6 @@ class Callback(Generic[OptionsConfigtype]):
 
   def on_filtered_training_epoch_end(
     self,
-    # train_state: TrainState,
     train_metrics: dict[str, float],
     epoch_idx: int,
   ) -> None:
@@ -89,11 +83,11 @@ class Callback(Generic[OptionsConfigtype]):
     Args:
         train_state: The current training state.
         train_metrics: Dictionary of training metrics of the current epoch.
+        epoch_idx: Index of the current epoch.
     """
 
   def on_validation_epoch_start(
     self,
-    # train_state: TrainState,
     epoch_idx: int,
   ) -> None:
     """Called at the beginning of validation."""
@@ -105,7 +99,6 @@ class Callback(Generic[OptionsConfigtype]):
 
   def on_filtered_validation_epoch_start(
     self,
-    # train_state: TrainState,
     epoch_idx: int,
   ) -> None:
     """Called at the beginning of `every_n_epochs` validation. To be implemented by subclasses.
@@ -117,7 +110,6 @@ class Callback(Generic[OptionsConfigtype]):
 
   def on_validation_epoch_end(
     self,
-    # train_state: TrainState,
     eval_metrics: dict[str, float],
     epoch_idx: int,
   ) -> None:
@@ -137,7 +129,6 @@ class Callback(Generic[OptionsConfigtype]):
 
   def on_filtered_validation_epoch_end(
     self,
-    # train_state: TrainState,
     eval_metrics: dict[str, float],
     epoch_idx: int,
   ) -> None:
@@ -153,7 +144,6 @@ class Callback(Generic[OptionsConfigtype]):
 
   def on_test_epoch_start(
     self,
-    # train_state: TrainState,
     epoch_idx: int,
   ) -> None:
     """Called at the beginning of testing.
@@ -163,7 +153,6 @@ class Callback(Generic[OptionsConfigtype]):
 
   def on_test_epoch_end(
     self,
-    # train_state: TrainState,
     test_metrics: dict[str, float],
     epoch_idx: int,
   ) -> None:

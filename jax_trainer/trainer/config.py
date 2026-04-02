@@ -44,8 +44,8 @@ class TrainerConfig(BaseModel):
   )
 
   check_val_every_n_epoch: int = Field(
-    default=1,
-    ge=0,
+    default=5,
+    gt=0,
     description="Number of epochs between each validation check. If 0, no validation is performed during training.",
   )
   logger: LoggerConfig = Field(description="Configuration for the logger.")

@@ -1,25 +1,24 @@
-# Standard libraries
+"""Trainer module for training and evaluating JAX/Flax models."""
+
+import logging
 import os
 import time
 from collections import defaultdict
 from collections.abc import Callable, Iterator
 from typing import Any, Generic, TypeVar
 
-import jax
-
 # JAX/Flax libraries
+import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from absl import logging
-from dltype import FloatTensor, dltyped
 from flax import nnx
 from flax.core import FrozenDict
+from progress_table.progress_table import ProgressTable, TableProgressBar
 from pydantic import create_model
 
 # ML collections for config
 from tabulate import tabulate as python_tabulate
-from tqdm.auto import tqdm
 
 from jax_trainer.datasets import DatasetModule
 from jax_trainer.datasets.dataset_constructor import HuggingFaceDatasetConfig
@@ -49,14 +48,15 @@ class TrainerModule(Generic[ModelParamsType]):
     optimizer_config: OptimizerConfig,
     dataset_config: HuggingFaceDatasetConfig,
     dataset: DatasetModule,
-  ):
-    """A basic Trainer module summarizing most common training functionalities like logging, model initialization, training loop, etc.
+  ) -> None:
+    """A basic Trainer module for logging, model initialization, training loop, and callbacks.
 
     Args:
         trainer_config: A dictionary containing the trainer configuration.
         model_config: A dictionary containing the model configuration.
         optimizer_config: A dictionary containing the optimizer configuration.
-        exmp_input: An input to the model with which the shapes are inferred.
+        dataset: The dataset module containing the training, validation and test sets.
+        dataset_config: A dictionary containing the dataset configuration.
     """
     super().__init__()
     self.trainer_config = trainer_config
@@ -66,9 +66,7 @@ class TrainerModule(Generic[ModelParamsType]):
     self.dataset_config = dataset_config
 
     # Default properties for trainer config
-    self.trainer_config.check_val_every_n_epoch = (
-      self.trainer_config.check_val_every_n_epoch
-    )
+    self.trainer_config.check_val_every_n_epoch = self.trainer_config.check_val_every_n_epoch
     self.prepare_rngs()
 
     # Create empty model. Note: no parameters yet
@@ -76,19 +74,19 @@ class TrainerModule(Generic[ModelParamsType]):
     self.build_model(model_config)
     # Init trainer parts
     self.create_jitted_functions()
-    # self.init_model()
     self.init_logger(self.trainer_config.logger)
     self.init_callbacks()
     self.checkpoint_manager = None
     if trainer_config.checkpoint_config is not None:
       self.checkpoint_manager = ModelCheckpoint(
-        params_config=trainer_config.checkpoint_config, trainer=self
+        params_config=trainer_config.checkpoint_config,
+        trainer=self,
       )
 
   def batch_to_input(self, batch: dict[str, jax.Array]) -> dict[str, Any]:
     raise NotImplementedError
 
-  def prepare_rngs(self):
+  def prepare_rngs(self) -> None:
     root_rng_train = jax.random.key(self.trainer_config.seed)
     root_rng_eval = jax.random.key(self.trainer_config.seed_eval)
     n_rngs = len(self.trainer_config.rngs)
@@ -107,7 +105,7 @@ class TrainerModule(Generic[ModelParamsType]):
     )
     self.rngs_eval = nnx.Rngs(**rngs_params_eval)
 
-  def build_model(self, model_config: ModelConfig[ModelParamsType]):
+  def build_model(self, model_config: ModelConfig[ModelParamsType]) -> None:
     """Creates the model class from the model_config.
 
     Args:
@@ -118,11 +116,11 @@ class TrainerModule(Generic[ModelParamsType]):
     hparams = model_config.hparams
     self.model = model_class(**hparams, rngs=self.rngs_train)
 
-  def init_logger(self, logger_config: LoggerConfig):
+  def init_logger(self, logger_config: LoggerConfig) -> None:
     """Initializes a logger and creates a logging directory.
 
     Args:
-        logger_params: A dictionary containing the specification of the logger.
+        logger_config: A dictionary containing the specification of the logger.
     """
     all_config_type = create_model(
       "FullModelConfig",
@@ -149,9 +147,7 @@ class TrainerModule(Generic[ModelParamsType]):
     self.log_dir = log_dir
     self.trainer_config.logger.log_dir = log_dir
     os.makedirs(os.path.join(log_dir, "metrics/"), exist_ok=True)
-    logging.get_absl_handler().use_absl_log_file(
-      log_dir=log_dir, program_name="absl_logging"
-    )
+    logging.get_absl_handler().use_absl_log_file(log_dir=log_dir, program_name="absl_logging")
     logging.set_verbosity(logger_config.log_file_verbosity)
     logging.set_stderrthreshold(logger_config.stderrthreshold)
     if not os.path.isfile(os.path.join(log_dir, "config.yaml")):
@@ -191,32 +187,6 @@ class TrainerModule(Generic[ModelParamsType]):
       if hasattr(callback, "on_training_step"):
         self.train_step_callbacks.append(callback)
 
-  def init_model(self):
-    """Creates an initial training state with newly generated network parameters.
-
-    Args:
-        exmp_input: An input to the model with which the shapes are inferred.
-    """
-    # Run model initialization
-    # variables = self.run_model_init()
-    # if isinstance(variables, FrozenDict):
-    #   mutable_variables, params = variables.pop("params")
-    # else:
-    #   params = variables.pop("params")
-    #   mutable_variables = variables
-    # if len(mutable_variables) == 0:
-    #   mutable_variables = None
-    # Create default state. Optimizer is initialized later
-    # self.state = TrainState(
-    #   step=0,
-    #   apply_fn=self.model.__call__,
-    #   params=nnx.state(self.model, nnx.Param),
-    #   # mutable_variables=mutable_variables,
-    #   tx=None,
-    #   opt_state=None,
-    # )
-    self.state = nnx.Optimizer(self.model, optax_optim)
-
   def init_train_metrics(self, batch: dict[str, jax.Array] | None = None) -> FrozenDict:
     if not hasattr(self, "train_metric_shapes"):
       self.train_metric_shapes = None
@@ -230,7 +200,7 @@ class TrainerModule(Generic[ModelParamsType]):
         metrics=None,
         rngs=self.rngs_train,
       )
-    return jax.tree_map(lambda x: jnp.zeros_like(x), self.train_metric_shapes)
+    return jax.tree.map(lambda x: jnp.zeros_like(x), self.train_metric_shapes)
 
   def init_eval_metrics(self, batch: dict[str, Any] | None = None) -> FrozenDict:
     if not hasattr(self, "eval_metric_shapes"):
@@ -245,28 +215,12 @@ class TrainerModule(Generic[ModelParamsType]):
         metrics=None,
         rngs=self.rngs_eval,
       )
-    return jax.tree_map(lambda x: jnp.zeros_like(x), self.eval_metric_shapes)
+    return jax.tree.map(lambda x: jnp.zeros_like(x), self.eval_metric_shapes)
 
   def set_dataset(self, dataset: DatasetModule):
     for callback in self.callbacks:
       callback.set_dataset(dataset)
     self.dataset = dataset
-
-  # def run_model_init(self, exmp_input: Batch, init_rng: jax.Array) -> dict:
-  #   """The model initialization call.
-
-  #   Args:
-  #       exmp_input: An input to the model with which the shapes are inferred.
-  #       init_rng: A jax.random.PRNGKey.
-
-  #   Returns:
-  #       The initialized variable dictionary.
-  #   """
-  #   exmp_input = self.batch_to_input(exmp_input)
-  #   variables = self.model.init(rngs, exmp_input, train=True)
-  #   if not isinstance(variables, FrozenDict):
-  #     variables = freeze(variables)
-  #   return variables
 
   def tabulate(self, exmp_input: dict[str, jax.Array]) -> str:
     """Prints a summary of the Module represented as table.
@@ -288,13 +242,13 @@ class TrainerModule(Generic[ModelParamsType]):
     """
     params = self.state.params
     params = flatten_dict(params)
-    param_shape = jax.tree_map(lambda x: x.shape, params)
-    param_count = jax.tree_map(lambda x: np.prod(x.shape), params)
-    param_dtype = jax.tree_map(lambda x: x.dtype, params)
-    param_mean = jax.tree_map(lambda x: jnp.mean(x).item(), params)
-    param_std = jax.tree_map(lambda x: jnp.std(x).item(), params)
-    param_min = jax.tree_map(lambda x: jnp.min(x).item() if x.size > 0 else 0, params)
-    param_max = jax.tree_map(lambda x: jnp.max(x).item() if x.size > 0 else 0, params)
+    param_shape = jax.tree.map(lambda x: x.shape, params)
+    param_count = jax.tree.map(lambda x: np.prod(x.shape), params)
+    param_dtype = jax.tree.map(lambda x: x.dtype, params)
+    param_mean = jax.tree.map(lambda x: jnp.mean(x).item(), params)
+    param_std = jax.tree.map(lambda x: jnp.std(x).item(), params)
+    param_min = jax.tree.map(lambda x: jnp.min(x).item() if x.size > 0 else 0, params)
+    param_max = jax.tree.map(lambda x: jnp.max(x).item() if x.size > 0 else 0, params)
     summary = defaultdict(list)
     for key in sorted(list(params.keys())):
       summary["Name"].append(key)
@@ -307,7 +261,7 @@ class TrainerModule(Generic[ModelParamsType]):
       summary["Max"].append(param_max[key])
     return python_tabulate(summary, headers="keys")
 
-  def init_optimizer(self, num_epochs: int, num_train_steps_per_epoch: int):
+  def init_optimizer(self, num_epochs: int, num_train_steps_per_epoch: int) -> None:
     """Initializes the optimizer and learning rate scheduler.
 
     Args:
@@ -321,14 +275,7 @@ class TrainerModule(Generic[ModelParamsType]):
     )
     self.lr_schedule = lr_schedule  # Save for logging
     # Initialize training state
-    # self.state = TrainState.create(
-    #   apply_fn=self.state.apply_fn,
-    #   params=self.state.params,
-    #   mutable_variables=self.state.mutable_variables,
-    #   tx=optimizer,
-    #   # rng=self.state.rng,
-    # )
-    self.state = nnx.Optimizer(self.model, optimizer)
+    self.state = nnx.ModelAndOptimizer(self.model, optimizer, wrt=nnx.Param)
     # self.state = self.state.replace(step=jnp.array(self.state.step))  # Convert to jnp.array for compiling.
     # self.state = jax.device_put(self.state)
 
@@ -339,11 +286,11 @@ class TrainerModule(Generic[ModelParamsType]):
     """
     train_step, eval_step = self.create_functions()
     if self.trainer_config.debug:  # Skip jitting
-      print("Skipping jitting due to debug=True")
+      logging.info("Skipping jitting due to debug=True")
       self.train_step = train_step
       self.eval_step = eval_step
     else:  # Jit
-      print("Not skipping jitting due to debug=True")
+      logging.info("Jitting train_step and eval_step...")
       train_donate_argnames = ["metrics"]  # Donate metrics to avoid copying.
       if self.trainer_config.donate_train_state:
         train_donate_argnames.append("optimizer_state")
@@ -368,37 +315,6 @@ class TrainerModule(Generic[ModelParamsType]):
     This function needs to be overwritten by a subclass.
     """
     raise NotImplementedError
-
-  # def model_apply(
-  #   self,
-  #   params: Any,
-  #   state: TrainState,
-  #   input: Any,
-  #   rng: jax.Array,
-  #   train: bool = True,
-  #   mutable: list[str] | None = None,
-  #   **kwargs,
-  # ) -> tuple[Any, dict | None]:
-  #   """The model apply function that can be used in the loss function for simplification."""
-  #   rngs = self.get_model_rng(rng)
-  #   variables = {"params": params}
-  #   mutable_keys = [] if mutable is None else mutable
-  #   if state.mutable_variables is not None:
-  #     variables.update(
-  #       {k: state.mutable_variables[k] for k in state.mutable_variables.keys()}
-  #     )
-  #     if train:
-  #       mutable_keys += list(state.mutable_variables.keys())
-  #   if len(mutable_keys) == 0:
-  #     mutable_keys = False
-  #   out = state.apply_fn(
-  #     variables, input, train=train, rngs=rngs, mutable=mutable_keys, **kwargs
-  #   )
-  #   if mutable_keys is not False:
-  #     out, mutable_vars = out
-  #   else:
-  #     mutable_vars = None
-  #   return out, mutable_vars
 
   def create_training_function(
     self,
@@ -540,31 +456,50 @@ class TrainerModule(Generic[ModelParamsType]):
     all_eval_metrics = {}
     train_metrics = None
     training_failed = False
-    for epoch_idx in self.tracker(range(1, num_epochs + 1), desc="Epochs"):
+    progress_table = ProgressTable(
+      pbar_embedded=False,  # Do not use embedded pbar
+      pbar_style="angled alt red blue",
+    )
+    for epoch_idx in self.tracker(progress_table, range(1, num_epochs + 1)):
+      progress_table["epoch"] = epoch_idx
       self.on_training_epoch_start(epoch_idx)
       train_metrics, epoch_metrics = self.train_epoch(
-        datasets.train, epoch_idx=epoch_idx, train_metrics=train_metrics
+        progress_table, datasets.train, epoch_idx=epoch_idx, train_metrics=train_metrics
       )
       if self.trainer_config.detect_nans:
         nan_keys = self.trainer_config.nan_keys
         if isinstance(nan_keys, str):
           nan_keys = (nan_keys,)
         if any([np.isnan(epoch_metrics.get(key, 0.0)) for key in nan_keys]):
-          logging.error(
-            f"NaN detected in epoch metrics of epoch {epoch_idx}. Aborting training."
-          )
+          logging.error(f"NaN detected in epoch metrics of epoch {epoch_idx}. Aborting training.")
           training_failed = True
           break
       self.on_training_epoch_end(epoch_metrics, epoch_idx)
       # Validation every N epochs
-      if (
+      run_validation = (
         self.trainer_config.check_val_every_n_epoch > 0
         and epoch_idx % self.trainer_config.check_val_every_n_epoch == 0
-      ):
+      )
+      if run_validation:
         self.on_validation_epoch_start(epoch_idx)
         eval_metrics = self.eval_model(datasets.val, mode="val", epoch_idx=epoch_idx)
         all_eval_metrics[epoch_idx] = eval_metrics
         self.on_validation_epoch_end(eval_metrics, epoch_idx)
+        loss = eval_metrics["val/loss"]
+        if self.trainer_config.enable_progress_bar:
+          progress_table.update(
+            name="valid loss",
+            value=loss,
+            color="red",
+          )
+          progress_table.update(
+            name="valid accuracy",
+            value=eval_metrics["val/accuracy"],
+            color="red bold",
+          )
+
+      progress_table.next_row(split=run_validation)
+    progress_table.close()
     if not training_failed:
       self.on_training_end()
       # Test best model if possible
@@ -621,7 +556,11 @@ class TrainerModule(Generic[ModelParamsType]):
     logging.info(f"Successfully completed in {time.time() - start_time:.2f} seconds.")
 
   def train_epoch(
-    self, train_loader: Iterator, epoch_idx: int, train_metrics: ImmutableMetrics | None
+    self,
+    progress_table: ProgressTable,
+    train_loader: Iterator,
+    epoch_idx: int,
+    train_metrics: ImmutableMetrics | None,
   ) -> tuple[ImmutableMetrics, HostMetrics]:
     """Trains a model for one epoch.
 
@@ -636,7 +575,7 @@ class TrainerModule(Generic[ModelParamsType]):
     # Train model for one epoch, and log avg loss and accuracy
     self.logger.start_epoch(epoch_idx, mode="train")
 
-    for batch in self.tracker(train_loader, desc="Training", leave=False):
+    for batch in self.tracker(progress_table, train_loader, desc="train epoch"):
       if train_metrics is None:
         train_metrics = self.init_train_metrics(self.batch_to_input(batch))
       if self.global_step == 0:
@@ -655,6 +594,19 @@ class TrainerModule(Generic[ModelParamsType]):
           self.state, train_metrics = self.train_step(
             self.state, self.batch_to_input(batch), train_metrics, rngs=self.rngs_train
           )
+          if train_metrics is not None and self.trainer_config.enable_progress_bar:
+            progress_table.update(
+              name="train loss",
+              value=train_metrics["loss_step"]["value"],
+              aggregate="mean",
+              color="blue",
+            )
+            progress_table.update(
+              name="train accuracy",
+              value=train_metrics["accuracy_step"]["value"],
+              aggregate="mean",
+              color="blue",
+            )
       for callback in self.train_step_callbacks:
         callback.on_training_step(train_metrics, epoch_idx, self.global_step)
       train_metrics = self.logger.log_step(train_metrics)
@@ -678,7 +630,11 @@ class TrainerModule(Generic[ModelParamsType]):
     self.logger.start_epoch(epoch_idx, mode=mode)
     eval_metrics = self.init_eval_metrics()
     step_count = 0
-    for batch in self.tracker(data_loader, desc=mode.capitalize(), leave=False):
+    progress_table = ProgressTable(
+      pbar_embedded=False,  # Do not use embedded pbar
+      pbar_style="angled alt red blue",
+    )
+    for batch in self.tracker(progress_table, data_loader, desc=mode.capitalize(), leave=False):
       eval_metrics = self.eval_step(
         self.state, self.batch_to_input(batch), eval_metrics, rngs=self.rngs_eval
       )
@@ -688,7 +644,9 @@ class TrainerModule(Generic[ModelParamsType]):
     _, metrics = self.logger.end_epoch(eval_metrics, save_metrics=True)
     return metrics
 
-  def tracker(self, iterator: Iterator, **kwargs) -> Iterator:
+  def tracker(
+    self, progress_table: ProgressTable, iterator: Iterator, **kwargs
+  ) -> Iterator | TableProgressBar:
     """Wraps an iterator in a progress bar tracker (tqdm) if the progress bar is enabled.
 
     Args:
@@ -700,9 +658,12 @@ class TrainerModule(Generic[ModelParamsType]):
         as input.
     """
     if self.trainer_config.enable_progress_bar:
-      return tqdm(iterator, **kwargs)
-    else:
-      return iterator
+      return progress_table(
+        iterable=iterator,
+        show_throughput=False,
+        show_eta=True,
+      )
+    return iterator
 
   def on_training_start(self):
     """Method called before training is started.

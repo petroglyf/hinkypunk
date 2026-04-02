@@ -14,6 +14,7 @@ class HuggingFaceDatasetConfig(BaseModel):
   create_validation_set: bool = False
   num_workers: int = 0
   hf_dataset_uri: str
+  limit_to: int | None = None
 
 
 T = TypeVar("T", bound=HuggingFaceDatasetConfig)
@@ -48,6 +49,11 @@ def build_huggingface_dataset(dataset_config: T) -> DatasetModule:
     else None
   )
 
+  if dataset_config.limit_to is not None:
+    batched_train_iterator = batched_train_iterator.take(dataset_config.limit_to)
+    batched_test_iterator = batched_test_iterator.take(dataset_config.limit_to)
+    if batched_validation_iterator is not None:
+      batched_validation_iterator = batched_validation_iterator.take(dataset_config.limit_to)
   return DatasetModule(
     dataset_config,
     batched_train_iterator,
