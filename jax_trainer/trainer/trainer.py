@@ -2,9 +2,8 @@
 
 import logging
 import os
-import time
 from collections import defaultdict
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import Any, Generic, TypeVar
 
 # JAX/Flax libraries
@@ -13,7 +12,6 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 from flax import nnx
-from flax.core import FrozenDict
 from progress_table.progress_table import ProgressTable, TableProgressBar
 from pydantic import create_model
 
@@ -22,13 +20,7 @@ from tabulate import tabulate as python_tabulate
 
 from jax_trainer.datasets import DatasetModule
 from jax_trainer.datasets.dataset_constructor import HuggingFaceDatasetConfig
-from jax_trainer.logger import (
-  HostMetrics,
-  ImmutableMetrics,
-  LogFreq,
-  LogMetricMode,
-  update_metrics,
-)
+from jax_trainer.logger import ImmutableMetrics
 from jax_trainer.logger.config import LoggerConfig
 from jax_trainer.optimizer.config import OptimizerConfig
 from jax_trainer.optimizer.optimizer_constructor import OptimizerBuilder
@@ -73,7 +65,7 @@ class TrainerModule(Generic[ModelParamsType]):
 
     self.build_model(model_config)
     # Init trainer parts
-    self.create_jitted_functions()
+    # self.create_jitted_functions()
     self.init_logger(self.trainer_config.logger)
     self.init_callbacks()
     self.checkpoint_manager = None
@@ -187,36 +179,6 @@ class TrainerModule(Generic[ModelParamsType]):
       if hasattr(callback, "on_training_step"):
         self.train_step_callbacks.append(callback)
 
-  def init_train_metrics(self, batch: dict[str, jax.Array] | None = None) -> FrozenDict:
-    if not hasattr(self, "train_metric_shapes"):
-      self.train_metric_shapes = None
-    if self.train_metric_shapes is None:
-      # if batch is None:
-      #   batch = self.exmp_input
-      _, self.train_metric_shapes = nnx.eval_shape(
-        self.train_step,
-        optimizer_state=self.state,
-        model_kwargs=batch,
-        metrics=None,
-        rngs=self.rngs_train,
-      )
-    return jax.tree.map(lambda x: jnp.zeros_like(x), self.train_metric_shapes)
-
-  def init_eval_metrics(self, batch: dict[str, Any] | None = None) -> FrozenDict:
-    if not hasattr(self, "eval_metric_shapes"):
-      self.eval_metric_shapes = None
-    if self.eval_metric_shapes is None:
-      if batch is None:
-        batch = self.exmp_input
-      self.eval_metric_shapes = nnx.eval_shape(
-        self.eval_step,
-        optimizer_state=self.state,
-        model_kwargs=batch,
-        metrics=None,
-        rngs=self.rngs_eval,
-      )
-    return jax.tree.map(lambda x: jnp.zeros_like(x), self.eval_metric_shapes)
-
   def set_dataset(self, dataset: DatasetModule):
     for callback in self.callbacks:
       callback.set_dataset(dataset)
@@ -315,334 +277,6 @@ class TrainerModule(Generic[ModelParamsType]):
     This function needs to be overwritten by a subclass.
     """
     raise NotImplementedError
-
-  def create_training_function(
-    self,
-  ) -> Callable[
-    [nnx.Optimizer, dict[str, jax.Array], ImmutableMetrics | None, nnx.Rngs],
-    tuple[nnx.Optimizer, ImmutableMetrics],
-  ]:
-    """Creates and returns a function for the training step.
-
-    The function takes as input the training state and a batch from the train loader. The
-    function is expected to return a dictionary of logging metrics, and a new train state.
-    """
-
-    def train_step(
-      optimizer_state: nnx.Optimizer,
-      model_kwargs: dict[str, jax.Array],
-      metrics: ImmutableMetrics | None,
-      rngs: nnx.Rngs,
-    ) -> tuple[nnx.Optimizer, ImmutableMetrics]:
-      all_value_and_grad_out = nnx.value_and_grad(self.loss_function, has_aux=True)(
-        model=optimizer_state.model,
-        batch=model_kwargs,
-        rngs=rngs,
-        train=True,
-      )
-      (_, step_metrics), grads = all_value_and_grad_out
-      # In place updates. -- this usualy takes a model parameter but the old version is just grads.
-      optimizer_state.update(grads)
-
-      if self.trainer_config.log_grad_norm:
-        grad_norm = optax.global_norm(grads)
-        step_metrics["optimizer/grad_global_norm"] = {
-          "value": grad_norm,
-          "log_freq": LogFreq.STEP,
-        }
-        step_metrics["optimizer/grad_global_norm_max"] = {
-          "value": grad_norm,
-          "mode": LogMetricMode.MAX,
-          "log_freq": LogFreq.EPOCH,
-        }
-        # params_norm = optax.global_norm(state.params)
-        # step_metrics["optimizer/params_global_norm"] = {
-        #   "value": params_norm,
-        #   "log_freq": LogFreq.STEP,
-        # }
-      metrics = update_metrics(
-        metrics,
-        step_metrics,
-        train=True,
-        batch_size=self.dataset_config.batch_size,
-      )
-      return optimizer_state, metrics
-
-    return train_step
-
-  def create_evaluation_function(
-    self,
-  ) -> Callable[
-    [nnx.Optimizer, dict[str, jax.Array], ImmutableMetrics | None, nnx.Rngs],
-    ImmutableMetrics,
-  ]:
-    """Creates and returns a function for the evaluation step.
-
-    The function takes as input the training state and a batch from the val/test loader. The
-    function is expected to return a dictionary of logging metrics, and a new train state.
-    """
-
-    def eval_step(
-      optimizer_state: nnx.Optimizer,
-      model_kwargs: dict[str, jax.Array],
-      metrics: ImmutableMetrics | None,
-      rngs: nnx.Rngs,
-    ) -> ImmutableMetrics:
-      all_value_and_grad_out = nnx.value_and_grad(self.loss_function, has_aux=True)(
-        optimizer_state.model,
-        model_kwargs,
-        rngs=rngs,
-        train=False,
-      )
-      (_, step_metrics), _ = all_value_and_grad_out
-      metrics = update_metrics(
-        metrics,
-        step_metrics,
-        train=False,
-        batch_size=self.dataset_config.batch_size,
-      )
-
-      return metrics
-
-    return eval_step
-
-  def create_functions(
-    self,
-  ) -> tuple[
-    Callable[
-      [nnx.Optimizer, dict[str, jax.Array], ImmutableMetrics | None, nnx.Rngs],
-      tuple[nnx.Optimizer, ImmutableMetrics],
-    ],
-    Callable[
-      [nnx.Optimizer, dict[str, jax.Array], ImmutableMetrics | None, nnx.Rngs],
-      ImmutableMetrics,
-    ],
-  ]:
-    """Creates and returns functions for the training and evaluation step.
-
-    The functions take as input the training state and a batch from the train/ val/test loader.
-    Both functions are expected to return a dictionary of logging metrics, and the training
-    function a new train state. This function needs to be overwritten by a subclass. The
-    train_step and eval_step functions here are examples for the signature of the functions.
-    """
-    return self.create_training_function(), self.create_evaluation_function()
-
-  def train_model(
-    self,
-    # train_loader: Iterator,
-    # val_loader: Iterator,
-    # test_loader: Iterator | None = None,
-    datasets: DatasetModule[Any],
-    num_epochs: int = 500,
-  ) -> dict[str, Any]:
-    """Starts a training loop for the given number of epochs.
-
-    Args:
-        train_loader: Data loader of the training set.
-        val_loader: Data loader of the validation set.
-        test_loader: If given, best model will be evaluated on the test set.
-        num_epochs: Number of epochs for which to train the model.
-
-    Returns:
-        A dictionary of the train, validation and evt. test metrics for the
-        best model on the validation set.
-    """
-    # Create optimizer and the scheduler for the given number of epochs
-    self.init_optimizer(num_epochs, len(datasets.train))
-    self.global_step = 0
-    # Prepare training loop
-    self.on_training_start()
-    self.test_eval_function(datasets.val)
-    all_eval_metrics = {}
-    train_metrics = None
-    training_failed = False
-    progress_table = ProgressTable(
-      pbar_embedded=False,  # Do not use embedded pbar
-      pbar_style="angled alt red blue",
-    )
-    for epoch_idx in self.tracker(progress_table, range(1, num_epochs + 1)):
-      progress_table["epoch"] = epoch_idx
-      self.on_training_epoch_start(epoch_idx)
-      train_metrics, epoch_metrics = self.train_epoch(
-        progress_table, datasets.train, epoch_idx=epoch_idx, train_metrics=train_metrics
-      )
-      if self.trainer_config.detect_nans:
-        nan_keys = self.trainer_config.nan_keys
-        if isinstance(nan_keys, str):
-          nan_keys = (nan_keys,)
-        if any([np.isnan(epoch_metrics.get(key, 0.0)) for key in nan_keys]):
-          logging.error(f"NaN detected in epoch metrics of epoch {epoch_idx}. Aborting training.")
-          training_failed = True
-          break
-      self.on_training_epoch_end(epoch_metrics, epoch_idx)
-      # Validation every N epochs
-      run_validation = (
-        self.trainer_config.check_val_every_n_epoch > 0
-        and epoch_idx % self.trainer_config.check_val_every_n_epoch == 0
-      )
-      if run_validation:
-        self.on_validation_epoch_start(epoch_idx)
-        eval_metrics = self.eval_model(datasets.val, mode="val", epoch_idx=epoch_idx)
-        all_eval_metrics[epoch_idx] = eval_metrics
-        self.on_validation_epoch_end(eval_metrics, epoch_idx)
-        loss = eval_metrics["val/loss"]
-        if self.trainer_config.enable_progress_bar:
-          progress_table.update(
-            name="valid loss",
-            value=loss,
-            color="red",
-          )
-          progress_table.update(
-            name="valid accuracy",
-            value=eval_metrics["val/accuracy"],
-            color="red bold",
-          )
-
-      progress_table.next_row(split=run_validation)
-    progress_table.close()
-    if not training_failed:
-      self.on_training_end()
-      # Test best model if possible
-      if datasets.test is not None:
-        # self.load_model(raise_if_not_found=False)
-        self.on_test_epoch_start(epoch_idx)
-        test_metrics = self.eval_model(datasets.test, mode="test", epoch_idx=epoch_idx)
-        self.on_test_epoch_end(test_metrics, epoch_idx)
-        all_eval_metrics["test"] = test_metrics
-    # Close logger
-    self.logger.finalize("success" if not training_failed else "failed")
-    for callback in self.callbacks:
-      callback.finalize("success" if not training_failed else "failed")
-    if self.checkpoint_manager is not None:
-      self.checkpoint_manager.finalize("success" if not training_failed else "failed")
-    return all_eval_metrics
-
-  def test_model(
-    self, test_loader: Iterator, apply_callbacks: bool = False, epoch_idx: int = 0
-  ) -> dict[str, Any]:
-    """Tests the model on the given test set.
-
-    Args:
-        test_loader: Data loader of the test set.
-        apply_callbacks: If True, the callbacks will be applied.
-        epoch_idx: The epoch index to use for the callbacks and logging.
-    """
-    test_metrics = self.eval_model(test_loader, mode="test", epoch_idx=epoch_idx)
-    if apply_callbacks:
-      self.on_test_epoch_end(test_metrics, epoch_idx=epoch_idx)
-    return test_metrics
-
-  def test_eval_function(self, val_loader: Iterator) -> None:
-    """Tests the evaluation function on a single batch.
-
-    This is useful to check if the functions have the correct signature and return the correct
-    values. This prevents annoying errors that occur at the first evaluation step.
-
-    This function does not test the training function anymore. This is because the training
-    function is already executed in the first epoch and we change its jit signature to donate
-    the train state and metrics. Thus, executing a training step requires updating the train
-    state, which we would not want to do here. The compilation time is logged during the very
-    first training step.
-
-    Args:
-        val_loader: Data loader of the validation set.
-    """
-    print("Verifying evaluation function...")
-    val_batch = self.batch_to_input(next(iter(val_loader)))
-    eval_metrics = self.init_eval_metrics(val_batch)
-    start_time = time.time()
-    logging.info("Testing and compiling eval_step...")
-    _ = self.eval_step(self.state, val_batch, eval_metrics, rngs=self.rngs_eval)
-    logging.info(f"Successfully completed in {time.time() - start_time:.2f} seconds.")
-
-  def train_epoch(
-    self,
-    progress_table: ProgressTable,
-    train_loader: Iterator,
-    epoch_idx: int,
-    train_metrics: ImmutableMetrics | None,
-  ) -> tuple[ImmutableMetrics, HostMetrics]:
-    """Trains a model for one epoch.
-
-    Args:
-        train_loader: Data loader of the training set.
-        epoch_idx: Current epoch index.
-
-    Returns:
-        A dictionary of the average training metrics over all batches
-        for logging.
-    """
-    # Train model for one epoch, and log avg loss and accuracy
-    self.logger.start_epoch(epoch_idx, mode="train")
-
-    for batch in self.tracker(progress_table, train_loader, desc="train epoch"):
-      if train_metrics is None:
-        train_metrics = self.init_train_metrics(self.batch_to_input(batch))
-      if self.global_step == 0:
-        # Log compilation and execution time of the first batch.
-        logging.info("Compiling train_step...")
-        start_time = time.time()
-        self.state, train_metrics = self.train_step(
-          self.state, self.batch_to_input(batch), train_metrics, rngs=self.rngs_train
-        )
-        logging.info(
-          f"Successfully completed train_step compilation in {time.time() - start_time:.2f} seconds."
-        )
-      else:
-        # Annotated with step number for TensorBoard profiling.
-        with jax.profiler.StepTraceAnnotation(f"train_step_{self.global_step}"):
-          self.state, train_metrics = self.train_step(
-            self.state, self.batch_to_input(batch), train_metrics, rngs=self.rngs_train
-          )
-          if train_metrics is not None and self.trainer_config.enable_progress_bar:
-            progress_table.update(
-              name="train loss",
-              value=train_metrics["loss_step"]["value"],
-              aggregate="mean",
-              color="blue",
-            )
-            progress_table.update(
-              name="train accuracy",
-              value=train_metrics["accuracy_step"]["value"],
-              aggregate="mean",
-              color="blue",
-            )
-      for callback in self.train_step_callbacks:
-        callback.on_training_step(train_metrics, epoch_idx, self.global_step)
-      train_metrics = self.logger.log_step(train_metrics)
-      self.global_step += 1
-    train_metrics, epoch_metrics = self.logger.end_epoch(train_metrics)
-    return train_metrics, epoch_metrics
-
-  def eval_model(self, data_loader: Iterator, mode: str, epoch_idx: int) -> HostMetrics:
-    """Evaluates the model on a dataset.
-
-    Args:
-        data_loader: Data loader of the dataset to evaluate on.
-        mode: Whether 'val' or 'test'
-        epoch_idx: Current epoch index.
-
-    Returns:
-        A dictionary of the evaluation metrics, averaged over data points
-        in the dataset.
-    """
-    # Test model on all images of a data loader and return avg loss
-    self.logger.start_epoch(epoch_idx, mode=mode)
-    eval_metrics = self.init_eval_metrics()
-    step_count = 0
-    progress_table = ProgressTable(
-      pbar_embedded=False,  # Do not use embedded pbar
-      pbar_style="angled alt red blue",
-    )
-    for batch in self.tracker(progress_table, data_loader, desc=mode.capitalize(), leave=False):
-      eval_metrics = self.eval_step(
-        self.state, self.batch_to_input(batch), eval_metrics, rngs=self.rngs_eval
-      )
-      step_count += 1
-    if step_count == 0:
-      logging.warning(f"No batches in {mode} loader at epoch {epoch_idx}.")
-    _, metrics = self.logger.end_epoch(eval_metrics, save_metrics=True)
-    return metrics
 
   def tracker(
     self, progress_table: ProgressTable, iterator: Iterator, **kwargs

@@ -1,9 +1,9 @@
 from typing import Annotated, TypeVar
 
-from datasets import Dataset, load_dataset, DatasetDict
+import jax.numpy as jnp
+from datasets import Dataset, DatasetDict, load_dataset
 from pydantic import BaseModel, Field
 
-from attention_system.datasets.augmentation import normalize_ds
 from jax_trainer.datasets.data_struct import DatasetModule
 
 
@@ -20,19 +20,33 @@ class HuggingFaceDatasetConfig(BaseModel):
 T = TypeVar("T", bound=HuggingFaceDatasetConfig)
 
 
+def _normalize_image(all_images: jnp.array) -> dict[str, jnp.array]:
+  float_stack = all_images.astype(float)
+  mean = float_stack.mean() / 255.0
+  std = float_stack.std() / 255.0
+  norm_images = (float_stack - mean) / std
+  return {"n_image": norm_images}
+
+
+def normalize_ds(ds: Dataset, which_set: str) -> Dataset:
+  """Calculate mean and std on train data."""
+  return ds.map(
+    _normalize_image,
+    keep_in_memory=True,
+    input_columns=("image"),
+    desc=f"Normalizing images in {which_set}",
+  )
+
+
 def build_huggingface_dataset(dataset_config: T) -> DatasetModule:
   """Get a dataset from huggingface."""
   ds_train: Dataset = load_dataset(dataset_config.hf_dataset_uri, split="train")  # type: ignore[reportAssignmentType]
   ds_test: Dataset = load_dataset(dataset_config.hf_dataset_uri, split="test")  # type: ignore[reportAssignmentType]
-  ds_train.set_format(type="numpy")
-  ds_test.set_format(type="numpy")
+  ds_train.set_format(type="jax")
+  ds_test.set_format(type="jax")
+
   ds_train.shuffle()
   ds_test.shuffle()
-
-  # Normalize the images
-  if dataset_config.normalize_column:
-    ds_train = normalize_ds(ds_train)
-    ds_test = normalize_ds(ds_test)
 
   ds_validation: Dataset | None = None
   if dataset_config.create_validation_set:
@@ -41,12 +55,10 @@ def build_huggingface_dataset(dataset_config: T) -> DatasetModule:
     ds_test = split_test_set["test"]
     ds_validation = split_test_set["train"]
 
-  batched_train_iterator = ds_train.batch(dataset_config.batch_size, num_proc=10)
-  batched_test_iterator = ds_test.batch(dataset_config.batch_size, num_proc=10)
+  batched_train_iterator = ds_train.batch(dataset_config.batch_size)
+  batched_test_iterator = ds_test.batch(dataset_config.batch_size)
   batched_validation_iterator = (
-    ds_validation.batch(dataset_config.batch_size, num_proc=10)
-    if ds_validation is not None
-    else None
+    ds_validation.batch(dataset_config.batch_size) if ds_validation is not None else None
   )
 
   if dataset_config.limit_to is not None:
@@ -54,6 +66,17 @@ def build_huggingface_dataset(dataset_config: T) -> DatasetModule:
     batched_test_iterator = batched_test_iterator.take(dataset_config.limit_to)
     if batched_validation_iterator is not None:
       batched_validation_iterator = batched_validation_iterator.take(dataset_config.limit_to)
+
+  # Normalize the images
+  if dataset_config.normalize_column:
+    batched_train_iterator = normalize_ds(batched_train_iterator, "training set")
+    batched_test_iterator = normalize_ds(batched_test_iterator, "test set")
+    batched_validation_iterator = (
+      normalize_ds(batched_validation_iterator, "val set")
+      if batched_validation_iterator is not None
+      else None
+    )
+
   return DatasetModule(
     dataset_config,
     batched_train_iterator,
