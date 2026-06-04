@@ -2,21 +2,14 @@
 
 import logging
 import os
-from collections import defaultdict
 from collections.abc import Iterator
 from typing import Any, Generic, TypeVar
 
-# JAX/Flax libraries
 import jax
-import jax.numpy as jnp
-import numpy as np
-import optax
+import yaml
 from flax import nnx
 from progress_table.progress_table import ProgressTable, TableProgressBar
 from pydantic import create_model
-
-# ML collections for config
-from tabulate import tabulate as python_tabulate
 
 from jax_trainer.datasets import DatasetModule
 from jax_trainer.datasets.dataset_constructor import HuggingFaceDatasetConfig
@@ -26,8 +19,7 @@ from jax_trainer.optimizer.config import OptimizerConfig
 from jax_trainer.optimizer.optimizer_constructor import OptimizerBuilder
 from jax_trainer.trainer.checkpoint_kit import ModelCheckpoint
 from jax_trainer.trainer.config import ModelConfig, TrainerConfig
-from jax_trainer.trainer.state import TrainState
-from jax_trainer.utils import flatten_dict, resolve_import
+from jax_trainer.utils import resolve_import
 
 ModelParamsType = TypeVar("ModelParamsType")
 
@@ -72,6 +64,7 @@ class TrainerModule(Generic[ModelParamsType]):
     if trainer_config.checkpoint_config is not None:
       self.checkpoint_manager = ModelCheckpoint(
         params_config=trainer_config.checkpoint_config,
+        # pyrefly: ignore [bad-argument-type]
         trainer=self,
       )
 
@@ -139,26 +132,16 @@ class TrainerModule(Generic[ModelParamsType]):
     self.log_dir = log_dir
     self.trainer_config.logger.log_dir = log_dir
     os.makedirs(os.path.join(log_dir, "metrics/"), exist_ok=True)
-    logging.get_absl_handler().use_absl_log_file(log_dir=log_dir, program_name="absl_logging")
-    logging.set_verbosity(logger_config.log_file_verbosity)
-    logging.set_stderrthreshold(logger_config.stderrthreshold)
+    # logging.get_absl_handler().use_absl_log_file(log_dir=log_dir, program_name="absl_logging")
+    # logging.set_verbosity(logger_config.log_file_verbosity)
+    # logging.set_stderrthreshold(logger_config.stderrthreshold)
     if not os.path.isfile(os.path.join(log_dir, "config.yaml")):
-      yaml_str = to_yaml_str(all_config)
+      yaml_str = yaml.dump(all_config.model_dump())
       with open(os.path.join(log_dir, "config.yaml"), "w") as f:
         f.write(yaml_str)
     # if not os.path.isfile(os.path.join(log_dir, "exmp_input.pkl")):
     #   save_pytree(self.exmp_input, os.path.join(log_dir, "exmp_input.pkl"))
-    if self.trainer_config.tabulate_model:
-      tab = self.tabulate(self.exmp_input)
-      logging.info("Model summary:\n" + tab)
-      with open(os.path.join(log_dir, "model.txt"), "w") as f:
-        f.write(tab)
-    if self.trainer_config.tabulate_params:
-      tab = self.tabulate_params()
-      logging.info("Parameter summary:\n" + tab)
-      with open(os.path.join(log_dir, "params.txt"), "w") as f:
-        f.write(tab)
-
+    
   def init_callbacks(self):
     """Initializes the callbacks defined in the trainer config."""
     self.callbacks = []
@@ -179,49 +162,10 @@ class TrainerModule(Generic[ModelParamsType]):
       if hasattr(callback, "on_training_step"):
         self.train_step_callbacks.append(callback)
 
-  def set_dataset(self, dataset: DatasetModule):
+  def set_dataset(self, dataset: DatasetModule) -> None:
     for callback in self.callbacks:
       callback.set_dataset(dataset)
     self.dataset = dataset
-
-  def tabulate(self, exmp_input: dict[str, jax.Array]) -> str:
-    """Prints a summary of the Module represented as table.
-
-    Args:
-        exmp_input: An input to the model with which the shapes are inferred.
-    """
-    rngs = self.get_model_rng(random.PRNGKey(0))
-    exmp_input = self.batch_to_input(exmp_input)
-    return self.model.tabulate(
-      rngs, exmp_input, train=True, console_kwargs={"force_terminal": False, "width": 300}
-    )
-
-  def tabulate_params(self) -> str:
-    """Prints a summary of the parameters represented as table.
-
-    Args:
-        exmp_input: An input to the model with which the shapes are inferred.
-    """
-    params = self.state.params
-    params = flatten_dict(params)
-    param_shape = jax.tree.map(lambda x: x.shape, params)
-    param_count = jax.tree.map(lambda x: np.prod(x.shape), params)
-    param_dtype = jax.tree.map(lambda x: x.dtype, params)
-    param_mean = jax.tree.map(lambda x: jnp.mean(x).item(), params)
-    param_std = jax.tree.map(lambda x: jnp.std(x).item(), params)
-    param_min = jax.tree.map(lambda x: jnp.min(x).item() if x.size > 0 else 0, params)
-    param_max = jax.tree.map(lambda x: jnp.max(x).item() if x.size > 0 else 0, params)
-    summary = defaultdict(list)
-    for key in sorted(list(params.keys())):
-      summary["Name"].append(key)
-      summary["Shape"].append(param_shape[key])
-      summary["Count"].append(param_count[key])
-      summary["Dtype"].append(param_dtype[key])
-      summary["Mean"].append(param_mean[key])
-      summary["Std"].append(param_std[key])
-      summary["Min"].append(param_min[key])
-      summary["Max"].append(param_max[key])
-    return python_tabulate(summary, headers="keys")
 
   def init_optimizer(self, num_epochs: int, num_train_steps_per_epoch: int) -> None:
     """Initializes the optimizer and learning rate scheduler.
@@ -241,11 +185,12 @@ class TrainerModule(Generic[ModelParamsType]):
     # self.state = self.state.replace(step=jnp.array(self.state.step))  # Convert to jnp.array for compiling.
     # self.state = jax.device_put(self.state)
 
-  def create_jitted_functions(self):
+  def create_jitted_functions(self) -> None:
     """Creates jitted versions of the training and evaluation functions.
 
     If self.debug is True, not jitting is applied.
     """
+    # pyrefly: ignore [missing-attribute]
     train_step, eval_step = self.create_functions()
     if self.trainer_config.debug:  # Skip jitting
       logging.info("Skipping jitting due to debug=True")
@@ -279,7 +224,7 @@ class TrainerModule(Generic[ModelParamsType]):
     raise NotImplementedError
 
   def tracker(
-    self, progress_table: ProgressTable, iterator: Iterator, **kwargs
+    self, progress_table: ProgressTable, iterator: Iterator, desc: str,  # noqa: ARG002
   ) -> Iterator | TableProgressBar:
     """Wraps an iterator in a progress bar tracker (tqdm) if the progress bar is enabled.
 
@@ -350,7 +295,7 @@ class TrainerModule(Generic[ModelParamsType]):
     for callback in self.callbacks:
       callback.on_validation_epoch_start(epoch_idx)
 
-  def on_validation_epoch_end(self, eval_metrics: dict[str, Any], epoch_idx: int):
+  def on_validation_epoch_end(self, eval_metrics: dict[str, Any], epoch_idx: int) -> None:
     """Method called at the end of each validation epoch. Can be used for additional logging
     and evaluation.
 
@@ -366,6 +311,7 @@ class TrainerModule(Generic[ModelParamsType]):
       callback.on_validation_epoch_end(eval_metrics, epoch_idx)
     if (
       self.checkpoint_manager is not None
+      and self.trainer_config.checkpoint_config
       and epoch_idx % self.trainer_config.checkpoint_config.every_n_epochs == 0
     ):
       self.checkpoint_manager.save_model(eval_metrics, epoch_idx)
@@ -397,7 +343,7 @@ class TrainerModule(Generic[ModelParamsType]):
     for callback in self.callbacks:
       callback.on_test_epoch_end(test_metrics, epoch_idx)
 
-  def load_model(self, epoch_idx: int = -1, raise_if_not_found: bool = True):
+  def load_model(self, epoch_idx: int = -1, raise_if_not_found: bool = True) -> None:
     """Loads model parameters and batch statistics from the logging directory."""
     logging.info(f"Loading model from epoch {epoch_idx}")
     state_dict = None
@@ -413,7 +359,7 @@ class TrainerModule(Generic[ModelParamsType]):
     else:
       self.restore(state_dict)
 
-  def restore(self, state_dict: dict[str, Any]):
+  def restore(self, state_dict: dict[str, Any]) -> None:
     """Restores the state of the trainer from a state dictionary.
 
     Args:
@@ -422,22 +368,4 @@ class TrainerModule(Generic[ModelParamsType]):
     logging.info("Restoring trainer state with keys " + str(state_dict.keys()))
     state_dict.pop("metrics")
     state_dict.pop("metadata")
-    print("Restore state")
-    self.state = TrainState.create(
-      apply_fn=self.model.apply,
-      # Optimizer will be overwritten when training starts
-      tx=self.state.tx if self.state.tx else optax.sgd(0.1),
-      rng=self.state.rng,
-      **state_dict,
-    )
 
-  def bind_model(self):
-    """Returns a model with parameters bound to it. Enables an easier inference access.
-
-    Returns:
-        The model with parameters and evt. batch statistics bound to it.
-    """
-    params = {"params": self.state.params}
-    if self.state.mutable_variables is not None:
-      params.update(self.state.mutable_variables)
-    return self.model.bind(params)

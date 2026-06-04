@@ -1,21 +1,19 @@
 """Types used in the metrics system."""
 
-from typing import Any
+from typing import Any, cast
 
 import jax
 import jax.numpy as jnp
 import numpy as np
-from flax.core import FrozenDict, freeze, unfreeze
-from jaxtyping import Array
+from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 
 from jax_trainer.logger.enums import LogFreq, LogMetricMode, LogMode
 
 # Immutable metrics for compilation.
-ImmutableMetricElement = FrozenDict[
+ImmutableMetrics = FrozenDict[
   str,
-  Array | int | float | LogMetricMode | LogFreq | LogMode,
+  jax.Array | int | float | LogMetricMode | LogFreq | LogMode,
 ]
-ImmutableMetrics = FrozenDict[str, ImmutableMetricElement]
 # Mutable metrics for updating/editing.
 MutableMetricElement = dict[str, jax.Array | int | float | LogMetricMode | LogFreq | LogMode]
 MutableMetrics = dict[str, MutableMetricElement]
@@ -25,7 +23,6 @@ StepMetrics = dict[
   jax.Array | int | float | dict[str, jax.Array | int | float | LogMetricMode | LogFreq | LogMode],
 ]
 # Combined types.
-MetricElement = ImmutableMetricElement | MutableMetricElement
 Metrics = ImmutableMetrics | MutableMetrics
 # Metrics on host (for logging).
 HostMetricElement = float | int | np.ndarray
@@ -82,9 +79,9 @@ def update_metrics(
         global_metrics,
         f"{key}_{p}" if p else key,
         val,
-        mode,
+        cast(LogMetricMode, mode),
         sub_freq,
-        log_mode,
+        cast(LogMode, log_mode),
         count,
         batch_size,
       )
@@ -189,8 +186,8 @@ def get_metrics(
         value = np.sqrt(value2 - value**2)
       metrics[host_key] = value
       if reset_metrics:
-        global_metrics[key]["value"] = jnp.zeros_like(global_metrics[key]["value"])
-        global_metrics[key]["count"] = jnp.zeros_like(global_metrics[key]["count"])
+        global_metrics[key]["value"] = jnp.zeros_like(cast(jax.Array, global_metrics[key]["value"]))
+        global_metrics[key]["count"] = jnp.zeros_like(cast(jax.Array, global_metrics[key]["count"]))
   if not isinstance(global_metrics, FrozenDict):
     global_metrics = freeze(global_metrics)
   return global_metrics, metrics

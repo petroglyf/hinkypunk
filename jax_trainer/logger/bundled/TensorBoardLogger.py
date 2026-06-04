@@ -1,13 +1,15 @@
+"""TensorBoardLogger implementation for JAX Trainer."""
 import logging
 from pathlib import Path
 
 import numpy as np
-from jax_trainer.logger.config import LoggerConfig
-from jax_trainer.logger.metrics import HostMetrics
-from jax_trainer.logger.types import LoggerType
 from plotly.graph_objects import Figure
 from tensorboard import default, program
 from tensorboardX import SummaryWriter
+
+from jax_trainer.logger.config import LoggerConfig
+from jax_trainer.logger.metrics import HostMetrics
+from jax_trainer.logger.types import LoggerType
 
 _logger = logging.getLogger(__name__)
 
@@ -16,6 +18,7 @@ class TensorBoardLogger(LoggerType):
   """Logger implementation for TensorBoard."""
 
   def __init__(self, config: LoggerConfig) -> None:
+    """Initializes the TensorBoard logger."""
     log_dir = Path(config.log_dir)
     self.log_dir = log_dir
     self.project_name = config.project_name
@@ -42,7 +45,7 @@ class TensorBoardLogger(LoggerType):
     for metric_key, metric_value in metrics_dict.items():
       self.writer.add_scalar(metric_key, metric_value, step)
 
-  def finalize(self, status: str) -> None:
+  def finalize(self, status: str) -> None:  # noqa: ARG002
     self.writer.flush()
     self.writer.close()
 
@@ -72,8 +75,8 @@ class TensorBoardLogger(LoggerType):
     self,
     tag: str,
     mat: np.ndarray,
-    metadata: list[str],
-    label_img: np.ndarray,
+    metadata: list[str] | None,
+    label_img: np.ndarray | None,
     global_step: int,
   ) -> None:
     self.writer.add_embedding(

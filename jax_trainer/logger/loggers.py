@@ -1,5 +1,4 @@
 import json
-import os
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -7,13 +6,13 @@ from typing import Any
 
 import jax
 import jax.numpy as jnp
-import matplotlib.pyplot as plt
 import numpy as np
 from absl import logging
+from plotly.graph_objects import Figure
 
 from jax_trainer.logger.config import LoggerConfig
 from jax_trainer.logger.enums import LogFreq
-from jax_trainer.logger.metrics import HostMetrics, Metrics, get_metrics
+from jax_trainer.logger.metrics import HostMetrics, ImmutableMetrics, get_metrics
 from jax_trainer.logger.utils import build_tool_logger
 
 
@@ -42,7 +41,7 @@ class Logger:
     self.epoch_element_count = 0
     self.epoch_step_count = 0
     self.epoch_log_prefix = ""
-    self.epoch_start_time = None
+    self.epoch_start_time = time.time()
 
   def _get_new_metrics_dict(self) -> dict[str, Any]:
     """Returns a default dict for metrics, with the following structure.
@@ -114,12 +113,13 @@ class Logger:
         epoch (int): The index of the epoch.
         mode (str, optional): The logging mode. Should be in ["train", "val", "test"]. Defaults to "train".
     """
-    assert mode in ["train", "val", "test"], f"Unknown logging mode {mode}."
+    if mode not in ["train", "val", "test"]:
+      raise ValueError(_:=f"Unknown logging mode {mode}.")
     self.logging_mode = mode
     self.epoch_idx = epoch
     self._reset_epoch_metrics()
 
-  def log_step(self, metrics: Metrics) -> Metrics:
+  def log_step(self, metrics: ImmutableMetrics) -> ImmutableMetrics:
     """Log metrics for a single step.
 
     Args:
@@ -138,14 +138,14 @@ class Logger:
       if self.step_count >= self.log_steps_every:
         if self.step_count > self.log_steps_every:
           logging.warning(
-            f"Logging step count is {self.step_count} but should be {self.log_steps_every}."
+            f"Logging step count is {self.step_count} but should be {self.log_steps_every}.",
           )
         metrics, step_metrics = get_metrics(
-          metrics, log_freq=LogFreq.STEP, reset_metrics=True
+          metrics, log_freq=LogFreq.STEP, reset_metrics=True,
         )
         final_step_metrics = self._finalize_metrics(metrics=step_metrics)
         self.log_metrics(
-          final_step_metrics, step=self.full_step_counter, log_postfix="step"
+          final_step_metrics, step=self.full_step_counter, log_postfix="step",
         )
         self._reset_step_metrics()
     return metrics
@@ -160,7 +160,7 @@ class Logger:
     self.epoch_step_count = 0
     self.epoch_start_time = time.time()
 
-  def log_epoch_scalar(self, key: str, value: float | int | jnp.ndarray) -> None:
+  def log_epoch_scalar(self, key: str, value: float | jax.Array) -> None:
     """Logs a single scalar metric in the metric dict of the current epoch.
 
     Args:
@@ -170,7 +170,7 @@ class Logger:
     self.epoch_metrics[key] = value
 
   def _finalize_metrics(self, metrics: HostMetrics) -> HostMetrics:
-    """Finalizes the metrics of the current epoch by aggregating them over the epoch, corresponding to their selected mode.
+    """Finalizes the metrics of the current epoch by aggregating them over the epoch.
 
     Args:
         metrics (HostMetrics): The metrics to finalize.
@@ -191,9 +191,10 @@ class Logger:
 
   def end_epoch(
     self,
-    metrics: Metrics,
+    metrics: ImmutableMetrics,
+    *,
     save_metrics: bool = False,
-  ) -> tuple[Metrics, HostMetrics]:
+  ) -> tuple[ImmutableMetrics, HostMetrics]:
     """Ends the current epoch and logs the epoch metrics.
 
     Args:
@@ -208,7 +209,7 @@ class Logger:
     """
     self.log_epoch_scalar("time", time.time() - self.epoch_start_time)
     metrics, epoch_metrics = get_metrics(
-      metrics, log_freq=LogFreq.EPOCH, reset_metrics=True
+      metrics, log_freq=LogFreq.EPOCH, reset_metrics=True,
     )
     epoch_metrics.update(self.epoch_metrics)
     final_epoch_metrics = self._finalize_metrics(metrics=epoch_metrics)
@@ -228,7 +229,7 @@ class Logger:
       and self.epoch_step_count < self.log_steps_every
     ):
       logging.info(
-        "Training epoch has fewer steps than the logging frequency. Resetting step metrics."
+        "Training epoch has fewer steps than the logging frequency. Resetting step metrics.",
       )
       metrics, _ = get_metrics(metrics, log_freq=LogFreq.STEP, reset_metrics=True)
       self._reset_step_metrics()
@@ -236,7 +237,9 @@ class Logger:
     return metrics, final_epoch_metrics
 
   def save_metrics(self, filename: str, metrics: dict[str, Any]) -> None:
-    """Saves a dictionary of metrics to file. Can be used as a textual representation of the validation performance for checking in the terminal.
+    """Saves a dictionary of metrics to file.
+
+    Can be used as a textual representation of the validation performance for checking in the terminal.
 
     Args:
       filename: Name of the metrics file without folders and postfix.
@@ -275,7 +278,7 @@ class Logger:
       image = jax.device_get(image)
     self.logger.log_image(
       tag=f"{logging_mode}/{key}{log_postfix}",
-      img_tensor=image,
+      image=image,
       global_step=step,
       dataformats="HWC",
     )
@@ -283,7 +286,7 @@ class Logger:
   def log_figure(
     self,
     key: str,
-    figure: plt.Figure,
+    figure: Figure,
     step: int | None = None,
     log_postfix: str = "",
     logging_mode: str | None = None,
@@ -301,7 +304,7 @@ class Logger:
       step = self.full_step_counter
     if logging_mode is None:
       logging_mode = self.logging_mode
-    self.logger.experiment.add_figure(
+    self.logger.log_figure(
       tag=f"{logging_mode}/{key}{log_postfix}",
       figure=figure,
       global_step=step,
@@ -312,7 +315,7 @@ class Logger:
     key: str,
     encodings: np.ndarray,
     step: int | None = None,
-    metadata: Any = None,
+    metadata: list[str] | None = None,
     images: np.ndarray | None = None,
     log_postfix: str = "",
     logging_mode: str | None = None,
@@ -321,9 +324,13 @@ class Logger:
 
     Args:
         key: Name of the figure.
+        encodings: embeddings to log
+        metadata: anything to add to the logged message.
+        images: Images correspond to each data point.
         figure: Figure to log.
         step: Step to log the image at.
         log_postfix: Postfix to append to the log key.
+        logging_mode: prefxi for the tag.
     """
     if step is None:
       step = self.full_step_counter
@@ -331,7 +338,7 @@ class Logger:
       logging_mode = self.logging_mode
     if images is not None:
       images = np.transpose(images, (0, 3, 1, 2))  # (N, H, W, C) -> (N, C, H, W)
-    self.logger.experiment.add_embedding(
+    self.logger.log_embedding(
       tag=f"{logging_mode}/{key}{log_postfix}",
       mat=encodings,
       metadata=metadata,
@@ -344,5 +351,5 @@ class Logger:
     """Returns the logging directory of the logger."""
     log_dir = self.logger.log_dir
     if log_dir is None:
-      log_dir = os.path.join(self.logger.save_dir, self.logger.version)
-    return log_dir
+      log_dir = self.logger.save_dir / self.logger.version
+    return str(log_dir)

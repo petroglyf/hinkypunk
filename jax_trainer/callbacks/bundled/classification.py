@@ -1,16 +1,17 @@
+"""Callbacks for classification tasks, including confusion matrix visualization."""
 import logging
 from typing import Any
 
 import matplotlib.pyplot as plt
 import numpy as np
 
-# import seaborn as sns
+# import seaborn as sns  # noqa: ERA001
 from pydantic import BaseModel, Field
 
 from jax_trainer.callbacks.callback import Callback, CallbackConfig
 from jax_trainer.trainer.trainer import TrainerModule
 
-
+_logger = logging.getLogger(__name__)
 class ConfusionMatrixConfig(BaseModel):
   """Configuration for ConfusionMatrixCallback."""
 
@@ -45,11 +46,12 @@ class ConfusionMatrixCallback(Callback):
     params_config: ConfusionMatrixConfig,
     callback_config: CallbackConfig,
     trainer: TrainerModule,
-  ):
+  ) -> None:
     super().__init__(callback_config)
     self.log_dir = trainer.trainer_config.logger.log_dir
     self.class_names = trainer.dataset_config.class_names
     self.cf_config = params_config
+    self.trainer = trainer
 
   def on_filtered_validation_epoch_end(
     self,
@@ -66,17 +68,17 @@ class ConfusionMatrixCallback(Callback):
     """Visualizes and logs the confusion matrix."""
     conf_key = [k for k in metrics if k.endswith("conf_matrix")]
     if len(conf_key) == 0:
-      logging.warning(f"Confusion matrix not found in eval metrics, only found {metrics.keys()}.")
+      _logger.warning(_ := f"Confusion matrix not found in eval metrics, only found {metrics.keys()}.")
       return
     conf_key = conf_key[0]
     conf_matrix = metrics[conf_key]
     if self.cf_config.normalize:
       conf_matrix = conf_matrix / conf_matrix.sum(axis=1, keepdims=True)
-      format = self.cf_config.format
+      cf_format = self.cf_config.format
     else:
-      format = self.cf_config.format
+      cf_format = self.cf_config.format  # noqa: F841
     fig, ax = plt.subplots(figsize=self.cf_config.figsize, dpi=self.cf_config.dpi)
-    # sns.heatmap(conf_matrix, annot=True, cmap=self.cf_config.cmap, ax=ax, fmt=format)
+    # sns.heatmap(conf_matrix, annot=True, cmap=self.cf_config.cmap, ax=ax, fmt=format)  # noqa: ERA001
     ax.set_xlabel("Predicted labels")
     ax.set_ylabel("True labels")
     ax.set_title("Confusion matrix")

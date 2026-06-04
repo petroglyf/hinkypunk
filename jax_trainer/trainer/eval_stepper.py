@@ -12,6 +12,7 @@ from flax.core import FrozenDict
 
 from jax_trainer.logger import (
   ImmutableMetrics,
+  Metrics,
   update_metrics,
 )
 
@@ -19,7 +20,7 @@ from .trainer import TrainerModule
 
 _logger = logging.getLogger(__name__)
 LossFnType = Callable[
-  [nnx.Module, dict[str, jax.Array], nnx.Rngs, bool], tuple[jax.Array, ImmutableMetrics]
+  [nnx.Module, dict[str, jax.Array], nnx.Rngs, bool], tuple[jax.Array, Any]
 ]
 
 
@@ -37,7 +38,7 @@ class EvalStep:
     self,
     optimizer_and_model: nnx.ModelAndOptimizer,
     model_kwargs: dict[str, jax.Array],
-    metrics: ImmutableMetrics | None,
+    metrics: Metrics | None,
     *,
     rngs: nnx.Rngs,
   ) -> ImmutableMetrics:
@@ -104,7 +105,7 @@ class EvalStep:
     )
     start_time = time.time()
     _logger.info("Testing and compiling eval_step...")
-    _ = self(
+    self(
       optimizer_and_model=trainer.state,
       model_kwargs=val_batch,
       metrics=eval_metrics,

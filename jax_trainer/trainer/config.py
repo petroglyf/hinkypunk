@@ -29,9 +29,18 @@ class CheckpointConfig(BaseModel):
     default=1,
     description="Number of best models to save based on the monitored metric.",
   )
+  every_n_epochs: int = Field(
+    default=1,
+    ge=1,
+    description="Save a checkpoint every N validation epochs.",
+  )
   save_optimizer_state: bool = Field(
     default=False,
     description="Whether to save the optimizer state along with the model parameters.",
+  )
+  save_mutable_variables: bool = Field(
+    default=False,
+    description="Whether to save the mutable variables along with the model parameters.",
   )
 
 
@@ -49,16 +58,6 @@ class TrainerConfig(BaseModel):
     description="Number of epochs between each validation check. If 0, no validation is performed during training.",
   )
   logger: LoggerConfig = Field(description="Configuration for the logger.")
-
-  tabulate_model: bool = Field(
-    default=True,
-    description="Whether to tabulate the model architecture and save it to a file.",
-  )
-
-  tabulate_params: bool = Field(
-    default=True,
-    description="Whether to tabulate the model parameters and save it to a file.",
-  )
 
   callbacks: list[CallbackConfig] = Field(
     [], description="A list of callback configurations to initialize."

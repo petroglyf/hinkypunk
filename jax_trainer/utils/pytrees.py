@@ -1,11 +1,9 @@
-from typing import Any, Dict
-
 from flax.core import FrozenDict
 
 
-def flatten_dict(d: Dict) -> Dict:
+def flatten_dict(d: dict | FrozenDict) -> dict:
     """Flattens a nested dictionary."""
-    flat_dict = {}
+    flat_dict: dict = {}
     for k, v in d.items():
         if isinstance(v, (dict, FrozenDict)):
             flat_dict.update({f"{k}.{k2}": v2 for k2, v2 in flatten_dict(v).items()})

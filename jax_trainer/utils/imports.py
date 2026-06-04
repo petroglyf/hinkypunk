@@ -3,9 +3,6 @@ import inspect
 import sys
 from typing import Any
 
-from absl import logging
-
-
 def resolve_import(import_path: str | Any) -> Any:
     """Resolves an import from a string or returns the input."""
     if isinstance(import_path, str):
@@ -25,4 +22,7 @@ def resolve_import_from_string(import_string: str) -> Any:
 
 
 def class_to_name(x: Any) -> str | Any:
-    return (inspect.getmodule(x).__name__ + "." + x.__name__) if inspect.isclass(x) or inspect.isfunction(x) else x
+    module = inspect.getmodule(x)
+    if (inspect.isclass(x) or inspect.isfunction(x)) and module is not None:
+        return module.__name__ + "." + x.__name__
+    return x
