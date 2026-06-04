@@ -2,7 +2,7 @@
 
 from typing import Annotated, TypeVar
 
-import jax.numpy as jnp
+import jax
 from datasets import Dataset, DatasetDict, load_dataset
 from pydantic import BaseModel, Field
 
@@ -22,7 +22,7 @@ class HuggingFaceDatasetConfig(BaseModel):
 T = TypeVar("T", bound=HuggingFaceDatasetConfig)
 
 
-def _normalize_image(all_images: jnp.Array) -> dict[str, jnp.Array]:
+def _normalize_image(all_images: jax.Array) -> dict[str, jax.Array]:
   float_stack = all_images.astype(float)
   mean = float_stack.mean() / 255.0
   std = float_stack.std() / 255.0
