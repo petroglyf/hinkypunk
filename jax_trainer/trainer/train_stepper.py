@@ -1,4 +1,10 @@
-# pyright: ignore [reportInvalidTypeForm]
+"""Single JAX training step: forward/backward pass, optimizer update, and metrics.
+
+Wraps a loss function into a callable that computes gradients via
+nnx.value_and_grad, applies them in place to an nnx.ModelAndOptimizer, and
+merges the resulting step metrics (optionally including gradient norms) into
+the running metrics dict via jax_trainer.logger.update_metrics.
+"""
 
 from collections.abc import Callable
 from typing import Final
@@ -16,12 +22,23 @@ from jax_trainer.logger import (
 )
 
 LossFnType = Callable[
-  [nnx.Module, dict[str, jax.Array], nnx.Rngs, bool], tuple[jax.Array, ImmutableMetrics]
+  [nnx.Module, dict[str, jax.Array], nnx.Rngs, bool], tuple[jax.Array, ImmutableMetrics],
 ]
 
 
 class TrainStep:
+  """Callable that performs one gradient-update step for a training batch."""
+
   def __init__(self, loss_fn: LossFnType, batch_size: int, *, log_grad_norm: bool = False) -> None:
+    """Configures the step function with a loss function and metric options.
+
+    Args:
+      loss_fn: Loss function taking (model, batch, rngs, train) and returning
+        (loss, metrics), where metrics follows the ImmutableMetrics structure.
+      batch_size: Number of examples per batch, used to weight metric aggregation.
+      log_grad_norm: Whether to additionally log the global gradient norm
+        (both the per-step value and its running max over the epoch).
+    """
     self.loss_function = loss_fn
     self.log_grad_norm: Final[bool] = log_grad_norm
     self.batch_size: Final[int] = batch_size
@@ -55,11 +72,6 @@ class TrainStep:
         "mode": LogMetricMode.MAX,
         "log_freq": LogFreq.EPOCH,
       }
-      # params_norm = optax.global_norm(state.params)
-      # step_metrics["optimizer/params_global_norm"] = {
-      #   "value": params_norm,
-      #   "log_freq": LogFreq.STEP,
-      # }
     metrics = update_metrics(
       metrics,
       step_metrics,

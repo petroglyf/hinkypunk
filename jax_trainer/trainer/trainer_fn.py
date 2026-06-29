@@ -14,7 +14,7 @@ from jax_trainer.logger import (
   ImmutableMetrics,
 )
 
-from .epoch_trainer import EpochStep
+from .episode_stepper import EpisodeProcessAsStep
 from .eval_stepper import EvalStep
 from .train_stepper import TrainStep
 from .trainer import TrainerModule
@@ -134,11 +134,14 @@ def train_model(
   train_step_call, eval_step_call, eval_step = _get_step_fns(
     trainer, not trainer.trainer_config.debug
   )
-  epoch_trainer = EpochStep(
-    trainer.tracker,
+  epoch_trainer = EpisodeProcessAsStep(
+    trainer.tracker, # pyrefly: ignore [bad-argument-type]
     trainer.logger,
     trainer.train_step_callbacks,
     trainer.batch_to_input,
+    trainer.on_train_step_start, # pyrefly: ignore [bad-argument-type]
+    trainer.continue_with_batch,
+    trainer.on_train_step_end, # pyrefly: ignore [bad-argument-type]
     trainer.state,
     train_step_call,
     enable_progress_bar=trainer.trainer_config.enable_progress_bar,
@@ -159,7 +162,7 @@ def train_model(
     trainer.on_training_epoch_start(epoch_idx)
     train_metrics, epoch_metrics = epoch_trainer(
       progress_table,
-      iter(datasets.train),
+      datasets.train.to_batches(max_chunksize=trainer.dataset_config.batch_size),
       epoch_idx=epoch_idx,
       train_metrics=train_metrics,
       rngs=trainer.rngs_train,
@@ -168,7 +171,7 @@ def train_model(
       nan_keys = trainer.trainer_config.nan_keys
       if isinstance(nan_keys, str):
         nan_keys = (nan_keys,)
-      if any(np.isnan(epoch_metrics.get(key, 0.0)) for key in nan_keys):
+      if any(np.isnan(epoch_metrics.get(key, 0.0)).any() for key in nan_keys):
         _logger.error(
           _ := f"NaN detected in epoch metrics of epoch {epoch_idx}. Aborting training.",
         )

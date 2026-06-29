@@ -2,8 +2,11 @@
 import logging
 from pathlib import Path
 
+import io
+
+import altair as alt
 import numpy as np
-from plotly.graph_objects import Figure
+from PIL import Image
 from tensorboard import default, program
 from tensorboardX import SummaryWriter
 
@@ -63,13 +66,15 @@ class TensorBoardLogger(LoggerType):
   def log_figure(
     self,
     tag: str,
-    figure: Figure,
+    figure: alt.Chart,
     global_step: int,
   ) -> None:
-    # Convert Plotly figure to a PNG image
-    img_bytes = figure.to_image(format="png")
-    img_array = np.frombuffer(img_bytes, dtype=np.uint8)
-    self.writer.add_image(tag, img_array, global_step)
+    bytes_stream = io.BytesIO()
+    figure.save(fp=bytes_stream, format="png")
+    bytes_stream.seek(0)
+    img = Image.open(bytes_stream).convert("RGB")
+    img_array = np.array(img)
+    self.writer.add_image(tag, img_array.transpose(2, 0, 1), global_step)
 
   def log_embedding(
     self,
