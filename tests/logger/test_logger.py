@@ -1,11 +1,19 @@
-from absl.testing import absltest
-from ml_collections import ConfigDict
-
-from jax_trainer.logger.utils import flatten_configdict
+import unittest
 
 
-class TestLogger(absltest.TestCase):
-    def test_flatten_configdict(self):
+def flatten_dict(d: dict, separation_mark: str = ".", prefix: str = "") -> dict:
+    result = {}
+    for key, value in d.items():
+        full_key = f"{prefix}{separation_mark}{key}" if prefix else key
+        if isinstance(value, dict):
+            result.update(flatten_dict(value, separation_mark=separation_mark, prefix=full_key))
+        else:
+            result[full_key] = value
+    return result
+
+
+class TestLogger(unittest.TestCase):
+    def test_flatten_configdict(self) -> None:
         config = {
             "a": 1,
             "b": {
@@ -18,17 +26,20 @@ class TestLogger(absltest.TestCase):
                 "g": 4,
             },
         }
-        config = ConfigDict(config)
-        flattened_config = flatten_configdict(config, separation_mark=".")
+        flattened_config = flatten_dict(config, separation_mark=".")
         self.assertEqual(flattened_config["a"], 1)
         self.assertEqual(flattened_config["b.c"], 2)
         self.assertEqual(flattened_config["b.d.e"], 3)
         self.assertEqual(flattened_config["f.g"], 4)
         self.assertEqual(len(flattened_config), 4)
 
-        flatten_config = flatten_configdict(config, separation_mark="/")
+        flatten_config = flatten_dict(config, separation_mark="/")
         self.assertEqual(flatten_config["a"], 1)
         self.assertEqual(flatten_config["b/c"], 2)
         self.assertEqual(flatten_config["b/d/e"], 3)
         self.assertEqual(flatten_config["f/g"], 4)
         self.assertEqual(len(flatten_config), 4)
+
+
+if __name__ == "__main__":
+    unittest.main()

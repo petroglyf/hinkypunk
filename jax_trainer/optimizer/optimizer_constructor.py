@@ -184,7 +184,7 @@ class OptimizerBuilder:
     transform_config = self.optimizer_config.grad_transforms
     grad_trans = {"pre": [], "post": []}
 
-    def add_grad_trans(config: Any, gt_fn: Callable):
+    def add_grad_trans(config: Any, gt_fn: Callable) -> None:
       # if isinstance(config, (float, int, str, bool)):
       gt = gt_fn(config)  # clip
       grad_trans["pre"].append(gt)

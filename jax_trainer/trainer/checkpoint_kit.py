@@ -7,16 +7,20 @@ from typing import Any, Generic, TypeVar
 import jax
 import orbax.checkpoint as ocp
 from absl import logging
+from jax_trainer.optimizer.config import OptimizerConfig
 
 # ML collections for config
-from jax_trainer.trainer.config import CheckpointConfig
+from jax_trainer.trainer.config import CheckpointConfig, ModelConfig, TrainerConfig
 from jax_trainer.utils import class_to_name
 
 ModelParamsType = TypeVar("ModelParamsType")
 
 
 class TrainerModule(Generic[ModelParamsType]):
-  pass
+  trainer_config: TrainerConfig
+  optimizer_config: OptimizerConfig
+  model_config: ModelConfig
+  state: Any
 
 
 class ModelCheckpoint:
@@ -29,6 +33,8 @@ class ModelCheckpoint:
   ) -> None:
     """Initializes ModelCheckpoint callback."""
     self.log_dir = trainer.trainer_config.logger.log_dir
+    self.trainer = trainer
+    self.params_config = params_config
 
     options = ocp.CheckpointManagerOptions(
       max_to_keep=params_config.save_top_k,
@@ -39,11 +45,11 @@ class ModelCheckpoint:
       create=True,
     )
     self.metadata = {
-      "trainer": trainer.trainer_config.to_dict(),
-      "model": trainer.model_config.to_dict(),
-      "optimizer": trainer.optimizer_config.to_dict(),
+      "trainer": trainer.trainer_config.model_dump(),
+      "model": trainer.model_config.model_dump(),
+      "optimizer": trainer.optimizer_config.model_dump(),
     }
-    self.metadata = jax.tree_map(class_to_name, self.metadata)
+    self.metadata = jax.tree.map(class_to_name, self.metadata)
     item_handlers = {
       "params": ocp.StandardCheckpointHandler(),
       "metadata": ocp.JsonCheckpointHandler(),
@@ -63,7 +69,7 @@ class ModelCheckpoint:
   def on_filtered_validation_epoch_end(
     self, eval_metrics: dict[str, float], epoch_idx: int
   ) -> None:
-    self.save_model(eval_metrics, epoch_idx)
+    self.save_model(self.trainer, eval_metrics, epoch_idx)
 
   def save_model(
     self, trainer: TrainerModule[Any], eval_metrics: dict[str, float], epoch_idx: int
@@ -75,8 +81,8 @@ class ModelCheckpoint:
         epoch_idx: Index of the current epoch.
     """
     logging.info(f"Saving model at epoch {epoch_idx} with eval metrics {eval_metrics}.")
-    assert self.model_config.monitor in eval_metrics, (
-      f'Metric to monitor "{self.model_config.monitor}" not found in eval metrics. Instead has keys: {", ".join(list(eval_metrics.keys()))}'
+    assert self.params_config.monitor in eval_metrics, (
+      f'Metric to monitor "{self.params_config.monitor}" not found in eval metrics. Instead has keys: {", ".join(list(eval_metrics.keys()))}'
     )
     save_items = {
       "params": ocp.args.StandardSave(self.trainer.state.params),
@@ -86,7 +92,7 @@ class ModelCheckpoint:
       save_items["mutable_variables"] = ocp.args.StandardSave(
         trainer.state.mutable_variables
       )
-    if self.model_config.save_optimizer_state:
+    if self.params_config.save_optimizer_state:
       save_items["optimizer"] = ocp.args.StandardSave(trainer.state.optimizer)
     eval_metrics = {
       k: eval_metrics[k]
@@ -96,7 +102,7 @@ class ModelCheckpoint:
     save_items = ocp.args.Composite(**save_items)
     self.manager.save(epoch_idx, args=save_items, metrics=eval_metrics)
 
-  def load_model(self, epoch_idx=-1) -> dict[str, Any]:
+  def load_model(self, epoch_idx: int=-1) -> dict[str, Any]:
     """Loads model parameters and variables from the logging directory.
 
     Args:
@@ -107,7 +113,10 @@ class ModelCheckpoint:
     """
     logging.info(f"Loading model at epoch {epoch_idx}.")
     if epoch_idx == -1:
-      epoch_idx = self.manager.best_step()
+      best = self.manager.best_step()
+      if best is None:
+        raise ValueError("No checkpoint found.")
+      epoch_idx = best
     state_dict = self.manager.restore(epoch_idx)
     state_dict = {k: v for k, v in state_dict.items() if v is not None}
     return state_dict
@@ -131,21 +140,15 @@ def load_from_checkpoint(checkpoint: str) -> Any:
   metadata_file = os.path.join(checkpoint, "metadata/metadata")
   assert os.path.isfile(metadata_file), "Could not find metadata file"
   with open(metadata_file, "rb") as f:
-    config = ConfigDict(json.load(f))
+    config: dict[str, Any] = json.load(f)
   # Adjust log dir to where its loaded from
   adjusted_checkpoint = checkpoint.split("/")
   if adjusted_checkpoint[-1] == "":
     adjusted_checkpoint = adjusted_checkpoint[:-1]
   if len(adjusted_checkpoint) < 2:
     raise ValueError("Checkpoint path must be at least two levels deep")
-  config.trainer.logger.log_dir = os.path.join(*adjusted_checkpoint[:-2])
-  # Create trainer
-  trainer = cls(
-    trainer_config=config.trainer,
-    model_config=config.model,
-    optimizer_config=config.optimizer,
-    dataset_config=config.dataset_config,
+  config["trainer"]["logger"]["log_dir"] = os.path.join(*adjusted_checkpoint[:-2])
+  raise NotImplementedError(
+    "load_from_checkpoint requires a concrete trainer class. "
+    "Call this method from a TrainerModule subclass."
   )
-  # Load model
-  trainer.load_model()
-  return trainer

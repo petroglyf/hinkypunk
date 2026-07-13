@@ -20,8 +20,16 @@ class Callback(Generic[OptionsConfigtype]):
     self.__callback_config = config
 
   @classmethod
-  def encapsulate_config(cls, options: dict[str, Any]) -> OptionsConfigtype:
+  def encapsulate_config(cls, options: dict[str, Any]) -> OptionsConfigtype: # pyrefly: ignore[bad-return]
     """Translates a dictionary of options into a pydantic model."""
+
+  def on_training_step(
+    self,
+    train_metrics: Any,
+    epoch_idx: int,
+    global_step: int,
+  ) -> None:
+    """Called after each training step."""
 
   def on_training_start(self) -> None:
     """Called at the beginning of training."""

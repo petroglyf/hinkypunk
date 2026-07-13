@@ -1,46 +1,33 @@
-from typing import Any, Callable, Dict, Tuple
-
 import jax
 import jax.numpy as jnp
 import optax
-from jax import random
+from flax import nnx
 
-from jax_trainer.logger import LogFreq, LogMetricMode, LogMode
-from jax_trainer.trainer.trainer import TrainerModule, TrainState
+from jax_trainer.logger import LogFreq, LogMetricMode, LogMode, StepMetrics
+from jax_trainer.trainer.trainer import TrainerModule
 
 
 class ImgClassifierTrainer(TrainerModule):
-  def loss_function(
+  def loss_function(  # pyrefly: ignore[bad-override]
     self,
-    params: Any,
-    state: TrainState,
-    batch: SupervisedBatch,
-    rng: jax.Array,
+    model: nnx.Module,
+    batch: dict[str, jax.Array],
+    rngs: nnx.Rngs,
     train: bool = True,
-  ) -> Tuple[Any, Tuple[Any, Dict]]:
-    """Loss function for image classification.
+  ) -> tuple[jax.Array, StepMetrics]:
+    """Cross-entropy loss for image classification.
 
-    Args:
-        params: Parameters of the model.
-        state: State of the trainer.
-        batch: Batch of data. Assumes structure of SupervisedBatch or subclasses.
-        rng: Key for random number generation.
-        train: Whether the model is in training mode.
-
-    Returns:
-        Tuple of loss and tuple of mutable variables and metrics.
+    Expects batch keys 'input' (images) and 'target' (integer labels).
     """
-    imgs = batch.input
-    labels = batch.target
-    logits, mutable_variables = self.model_apply(
-      params=params, state=state, input=imgs, rng=rng, train=train
-    )
+    imgs = batch["input"]
+    labels = batch["target"]
+    logits = model(imgs, train=train, rngs=rngs)
     loss = optax.softmax_cross_entropy_with_integer_labels(logits, labels).mean()
     preds = logits.argmax(axis=-1)
     acc = (preds == labels).mean()
     conf_matrix = jnp.zeros((logits.shape[-1], logits.shape[-1]))
     conf_matrix = conf_matrix.at[preds, labels].add(1)
-    metrics = {
+    metrics: StepMetrics = {
       "acc": acc,
       "acc_std": {"value": acc, "mode": LogMetricMode.STD, "log_mode": LogMode.EVAL},
       "acc_max": {
@@ -55,4 +42,4 @@ class ImgClassifierTrainer(TrainerModule):
         "log_mode": LogMode.EVAL,
       },
     }
-    return loss, (mutable_variables, metrics)
+    return loss, metrics

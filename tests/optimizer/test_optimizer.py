@@ -1,136 +1,150 @@
-from copy import deepcopy
+import unittest
 
 import optax
-from absl.testing import absltest
-from ml_collections import ConfigDict
 
 from jax_trainer.optimizer import OptimizerBuilder
+from jax_trainer.optimizer.config import (
+    AdamParams,
+    AdamwParams,
+    ConstantSchedulerParams,
+    CosineDecaySchedulerParams,
+    ExponentialDecaySchedulerParams,
+    LRSchedulerEnum,
+    OptimizerConfig,
+    OptimizerOptions,
+    RegularlizationConfig,
+    SchedulerConfig,
+    SGDParams,
+    WarmupCosineDecaySchedulerParams,
+)
+
+NO_GRAD_TRANSFORMS = RegularlizationConfig()
+CONSTANT_SCHEDULER = SchedulerConfig(
+    policy=LRSchedulerEnum.CONSTANT,
+    params=ConstantSchedulerParams(),
+)
 
 
-def build_optimizer(optimizer_config: ConfigDict):
+def build_optimizer(optimizer_config: OptimizerConfig):
     optimizer_builder = OptimizerBuilder(optimizer_config)
     return optimizer_builder.build_optimizer(num_epochs=100, num_train_steps_per_epoch=1000)
 
 
-class TestBuildOptimizer(absltest.TestCase):
-    # Test if constructing various optimizers work
+class TestBuildOptimizer(unittest.TestCase):
+    def test_build_optimizer_sgd(self) -> None:
+        config = OptimizerConfig(
+            name=OptimizerOptions.SGD,
+            lr=0.001,
+            params=SGDParams(momentum=0.9, nesterov=True),
+            scheduler=CONSTANT_SCHEDULER,
+            grad_transforms=NO_GRAD_TRANSFORMS,
+        )
+        optimizer, _ = build_optimizer(config)
+        self.assertIsInstance(optimizer, optax.GradientTransformation)
 
-    def test_build_optimizer_sgd(self):
-        optimizer_config = {
-            "name": "sgd",
-            "lr": 0.001,
-            "params": {"momentum": 0.9, "nesterov": True},
-        }
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
+    def test_build_optimizer_adam(self) -> None:
+        config = OptimizerConfig(
+            name=OptimizerOptions.ADAM,
+            lr=0.001,
+            params=AdamParams(beta1=0.9),
+            scheduler=CONSTANT_SCHEDULER,
+            grad_transforms=NO_GRAD_TRANSFORMS,
+        )
+        optimizer, _ = build_optimizer(config)
+        self.assertIsInstance(optimizer, optax.GradientTransformation)
 
-    def test_build_optimizer_adam(self):
-        optimizer_config = {"name": "adam", "lr": 0.001, "params": {"beta1": 0.9}}
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
+    def test_build_optimizer_adamw(self) -> None:
+        config = OptimizerConfig(
+            name=OptimizerOptions.ADAMW,
+            lr=0.001,
+            params=AdamwParams(beta1=0.9),
+            scheduler=CONSTANT_SCHEDULER,
+            grad_transforms=NO_GRAD_TRANSFORMS,
+        )
+        optimizer, _ = build_optimizer(config)
+        self.assertIsInstance(optimizer, optax.GradientTransformation)
 
-    def test_build_optimizer_adamw(self):
-        optimizer_config = {
-            "name": "adamw",
-            "lr": 0.001,
-            "params": {"beta1": 0.9},
-            "transforms": {"weight_decay": 0.01},
-        }
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
+    def test_build_optimizer_schedule_cosine_decay(self) -> None:
+        config = OptimizerConfig(
+            name=OptimizerOptions.ADAM,
+            lr=0.001,
+            params=AdamParams(beta1=0.9),
+            scheduler=SchedulerConfig(
+                policy=LRSchedulerEnum.COSINE_DECAY,
+                params=CosineDecaySchedulerParams(alpha=0.1),
+                decay_steps=1000,
+            ),
+            grad_transforms=NO_GRAD_TRANSFORMS,
+        )
+        optimizer, _ = build_optimizer(config)
+        self.assertIsInstance(optimizer, optax.GradientTransformation)
 
-    def test_build_optimizer_schedule_constant(self):
-        optimizer_config = {
-            "name": "adam",
-            "lr": 0.001,
-            "params": {"beta1": 0.9},
-            "scheduler": {"name": "constant"},
-        }
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
-
-    def test_build_optimizer_schedule_cosine_decay(self):
-        optimizer_config = {
-            "name": "adam",
-            "lr": 0.001,
-            "params": {"beta1": 0.9},
-            "scheduler": {"name": "cosine_decay", "alpha": 0.1, "decay_steps": 1000},
-        }
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
-
-    def test_build_optimizer_schedule_exponential_decay(self):
-        base_config = {
-            "name": "adam",
-            "lr": 0.001,
-            "params": {"beta1": 0.9},
-            "scheduler": {
-                "name": "exponential_decay",
-                "transition_steps": 1,
-                "staircase": False,
-                "warmup_steps": 100,
-                "cooldown_steps": 10,
-                "decay_steps": 1000,
-            },
-        }
-        for extra_kwargs in [{"decay_rate": 0.1}, {"end_lr": 0.0001}, {"end_lr_factor": 0.1}]:
+    def test_build_optimizer_schedule_exponential_decay(self) -> None:
+        for end_kwarg in [
+            {"decay_rate": 0.1},
+            {"end_lr": 0.0001},
+            {"end_lr_factor": 0.1},
+        ]:
             for warmup_steps in [0, 100]:
                 for cooldown_steps in [0, 10]:
-                    optimizer_config = deepcopy(base_config)
-                    optimizer_config["scheduler"]["warmup_steps"] = warmup_steps
-                    optimizer_config["scheduler"]["cooldown_steps"] = cooldown_steps
-                    optimizer_config["scheduler"].update(extra_kwargs)
-                    optimizer_config = ConfigDict(optimizer_config)
-                    optimizer, _ = build_optimizer(optimizer_config)
-                    self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
+                    params = ExponentialDecaySchedulerParams(
+                        transition_steps=1,
+                        staircase=False,
+                        warmup_steps=warmup_steps,
+                        cooldown_steps=cooldown_steps,
+                        **end_kwarg,
+                    )
+                    config = OptimizerConfig(
+                        name=OptimizerOptions.ADAM,
+                        lr=0.001,
+                        params=AdamParams(beta1=0.9),
+                        scheduler=SchedulerConfig(
+                            policy=LRSchedulerEnum.EXPONENTIAL_DECAY,
+                            params=params,
+                            decay_steps=1000,
+                        ),
+                        grad_transforms=NO_GRAD_TRANSFORMS,
+                    )
+                    optimizer, _ = build_optimizer(config)
+                    self.assertIsInstance(optimizer, optax.GradientTransformation)
 
-    def test_build_optimizer_schedule_warmup_cosine_decay(self):
-        optimizer_config = {
-            "name": "adam",
-            "lr": 0.001,
-            "params": {"beta1": 0.9},
-            "scheduler": {
-                "name": "warmup_cosine_decay",
-                "alpha": 0.1,
-                "decay_steps": 1000,
-                "warmup_steps": 100,
-            },
-        }
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
+    def test_build_optimizer_schedule_warmup_cosine_decay(self) -> None:
+        config = OptimizerConfig(
+            name=OptimizerOptions.ADAM,
+            lr=0.001,
+            params=AdamParams(beta1=0.9),
+            scheduler=SchedulerConfig(
+                policy=LRSchedulerEnum.WARMUP_COSINE_DECAY,
+                params=WarmupCosineDecaySchedulerParams(warmup_steps=100),
+                decay_steps=1000,
+            ),
+            grad_transforms=NO_GRAD_TRANSFORMS,
+        )
+        optimizer, _ = build_optimizer(config)
+        self.assertIsInstance(optimizer, optax.GradientTransformation)
 
-    def test_build_optimizer_gradient_clipping(self):
-        optimizer_config = {
-            "name": "adam",
-            "lr": 0.001,
-            "params": {"beta1": 0.9},
-            "scheduler": {"name": "constant"},
-            "transforms": {
-                "grad_clip_norm": 1.0,
-                "grad_clip_value": 0.1,
-            },
-        }
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
+    def test_build_optimizer_gradient_clipping(self) -> None:
+        config = OptimizerConfig(
+            name=OptimizerOptions.ADAM,
+            lr=0.001,
+            params=AdamParams(beta1=0.9),
+            scheduler=CONSTANT_SCHEDULER,
+            grad_transforms=RegularlizationConfig(grad_clip_norm=1.0, grad_clip_value=0.1),
+        )
+        optimizer, _ = build_optimizer(config)
+        self.assertIsInstance(optimizer, optax.GradientTransformation)
 
-    def test_build_optimizer_weight_decay(self):
-        optimizer_config = {
-            "name": "adam",
-            "lr": 0.001,
-            "params": {"beta1": 0.9},
-            "transforms": {"weight_decay": 0.01},
-        }
-        optimizer_config = ConfigDict(optimizer_config)
-        optimizer, _ = build_optimizer(optimizer_config)
-        self.assertTrue(isinstance(optimizer, optax.GradientTransformation))
+    def test_build_optimizer_weight_decay(self) -> None:
+        config = OptimizerConfig(
+            name=OptimizerOptions.ADAM,
+            lr=0.001,
+            params=AdamParams(beta1=0.9),
+            scheduler=CONSTANT_SCHEDULER,
+            grad_transforms=RegularlizationConfig(weight_decay=0.01),
+        )
+        optimizer, _ = build_optimizer(config)
+        self.assertIsInstance(optimizer, optax.GradientTransformation)
 
 
 if __name__ == "__main__":
-    absltest.main()
+    unittest.main()

@@ -4,7 +4,7 @@ from jax_trainer.logger.bundled.TensorBoardLogger import TensorBoardLogger
 from jax_trainer.logger.config import LoggerConfig
 
 
-def get_logging_dir(logger_config: LoggerConfig, model_name: str):
+def get_logging_dir(logger_config: LoggerConfig, model_name: str) -> tuple[str, str | None]:
   """Returns the logging directory and version.
 
   Args:
@@ -20,8 +20,10 @@ def get_logging_dir(logger_config: LoggerConfig, model_name: str):
     log_dir = None
   if not log_dir:
     base_log_dir = logger_config.base_log_dir
+    if base_log_dir is None:
+      raise ValueError("LoggerConfig.base_log_dir must be set when log_dir is not provided.")
     # Prepare logging
-    if "model_log_dir" not in logger_config:
+    if logger_config.model_log_dir is None:
       model_name = model_name.split(".")[-1]
     else:
       model_name = logger_config.model_log_dir
@@ -36,7 +38,7 @@ def get_logging_dir(logger_config: LoggerConfig, model_name: str):
   return log_dir, version
 
 
-def build_tool_logger(logger_config: LoggerConfig, model_name: str):
+def build_tool_logger(logger_config: LoggerConfig, model_name: str) -> TensorBoardLogger:
   """Builds the logger tool object, either Tensorboard or Weights and Biases.
 
   Args:

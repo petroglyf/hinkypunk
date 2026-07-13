@@ -46,7 +46,7 @@ class SGDParams(BaseModel):
 
 
 class ConstantSchedulerParams(BaseModel):
-  value: float = Field(..., description="Constant learning rate value.")
+  value: float = Field(0.0, description="Unused — lr comes from OptimizerConfig.lr.")
 
 
 class CosineDecaySchedulerParams(BaseModel):
@@ -101,7 +101,7 @@ class RegularlizationConfig(BaseModel):
   grad_clip_value: float | None = Field(
     None, description="Clip gradients by value if set."
   )
-  weight_decay: float = Field(0.0, description="Weight decay coefficient.", gt=0.0)
+  weight_decay: float = Field(0.0, description="Weight decay coefficient.", ge=0.0)
 
 
 class OptimizerConfig(BaseModel):

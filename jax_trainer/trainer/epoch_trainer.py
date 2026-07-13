@@ -15,6 +15,7 @@ from jax_trainer.callbacks.callback import Callback
 from jax_trainer.logger import (
   HostMetrics,
   ImmutableMetrics,
+  Metrics,
 )
 from jax_trainer.logger.loggers import Logger
 
@@ -25,7 +26,7 @@ _logger = logging.getLogger(__name__)
 
 class TrackerFn(Protocol):
   def __call__(
-    self, progress_table: ProgressTable, iterator: Iterator, **kwargs: Any
+    self, progress_table: ProgressTable, iterator: Iterator, desc: str,
   ) -> Iterator | TableProgressBar: ...
 
 
@@ -46,6 +47,7 @@ class EpochStep:
     *,
     enable_progress_bar: bool,
   ) -> None:
+    """Constructor for a step function for the epoch increment."""
     self.total_epochs_taken = 0
     self.tracker: Final[TrackerFn] = tracker
     self.logger: Final[Logger] = logger
@@ -70,7 +72,7 @@ class EpochStep:
         metrics=None,
         rngs=rngs,
       )
-    return jax.tree.map(lambda x: jnp.zeros_like(x), self.train_metric_shapes)
+    return jax.tree.map(jnp.zeros_like, self.train_metric_shapes)
 
   def __call__(
     self,
@@ -84,8 +86,11 @@ class EpochStep:
     """Trains a model for one epoch.
 
     Args:
+        progress_table: A progress table visualizer.
         train_loader: Data loader of the training set.
         epoch_idx: Current epoch index.
+        train_metrics: Metrics structure to add to.
+        rngs: Random number generators.
 
     Returns:
         A dictionary of the average training metrics over all batches
@@ -109,7 +114,7 @@ class EpochStep:
         )
         _logger.info(
           _
-          := f"Successfully completed train_step compilation in {time.time() - start_time:.2f} seconds.",  # noqa: E501
+          := f"Successfully completed train_step compilation in {time.time() - start_time:.2f} seconds.",
         )
       else:
         # Annotated with step number for TensorBoard profiling.
@@ -137,5 +142,7 @@ class EpochStep:
         callback.on_training_step(train_metrics, epoch_idx, self.total_epochs_taken)
       train_metrics = self.logger.log_step(train_metrics)
       self.total_epochs_taken += 1
+    if train_metrics is None:
+      raise ValueError(_ :="train_loader was empty — no training steps executed")
     train_metrics, epoch_metrics = self.logger.end_epoch(train_metrics)
     return train_metrics, epoch_metrics

@@ -1,19 +1,19 @@
 import logging
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from itertools import chain
-from typing import Any, Callable
+from typing import Any
 
-import numpy as np
 import jax
+import numpy as np
 from flax import nnx
 from progress_table.progress_table import ProgressTable
 
 from jax_trainer.datasets import DatasetModule
-
 from jax_trainer.logger import (
-  ImmutableMetrics,
   HostMetrics,
+  ImmutableMetrics,
 )
+
 from .epoch_trainer import EpochStep
 from .eval_stepper import EvalStep
 from .train_stepper import TrainStep
@@ -69,12 +69,12 @@ def _eval_model(
     pbar_embedded=False,  # Do not use embedded pbar
     pbar_style="angled alt red blue",
   )
-  for batch in trainer.tracker(progress_table, val_loader, desc=mode.capitalize(), leave=False):
+  for batch in trainer.tracker(progress_table, val_loader, desc=mode.capitalize()):
     eval_metrics = callable_step(
-      optimizer_and_model=trainer.state,
-      model_kwargs=trainer.batch_to_input(batch),
-      metrics=eval_metrics,
-      rngs=rngs,
+      trainer.state,
+      trainer.batch_to_input(batch),
+      eval_metrics,
+      rngs,
     )
     step_count += 1
   if step_count == 0:
@@ -87,10 +87,7 @@ def _get_step_fns(
   trainer: TrainerModule[Any],
   compile: bool,
 ) -> tuple[
-  Callable[
-    [nnx.ModelAndOptimizer, dict[str, jax.Array], ImmutableMetrics | None, nnx.Rngs],
-    tuple[nnx.ModelAndOptimizer, ImmutableMetrics],
-  ],
+  TrainStep,
   Callable[
     [nnx.ModelAndOptimizer, dict[str, jax.Array], ImmutableMetrics | None, nnx.Rngs],
     ImmutableMetrics,
@@ -108,8 +105,10 @@ def _get_step_fns(
     train_donate_argnames = ["metrics"]  # Donate metrics to avoid copying.
     if trainer.trainer_config.donate_train_state:
       train_donate_argnames.append("optimizer_state")
+    # pyrefly: ignore [bad-return]
     return nnx.jit(train_step), nnx.jit(eval_step), eval_step
   _logger.info("Skipping jitting due to debug=True")
+  # pyrefly: ignore [bad-return]
   return train_step, eval_step, eval_step
 
 
@@ -155,12 +154,12 @@ def train_model(
     pbar_embedded=False,  # Do not use embedded pbar
     pbar_style="angled alt red blue",
   )
-  for epoch_idx in trainer.tracker(progress_table, range(1, num_epochs + 1)):
+  for epoch_idx in trainer.tracker(progress_table, iter(range(1, num_epochs + 1)), desc=""):
     progress_table["epoch"] = epoch_idx
     trainer.on_training_epoch_start(epoch_idx)
     train_metrics, epoch_metrics = epoch_trainer(
       progress_table,
-      datasets.train,
+      iter(datasets.train),
       epoch_idx=epoch_idx,
       train_metrics=train_metrics,
       rngs=trainer.rngs_train,
@@ -178,10 +177,11 @@ def train_model(
     trainer.on_training_epoch_end(epoch_metrics, epoch_idx)
     # Validation every N epochs
     run_validation = (
-      trainer.trainer_config.check_val_every_n_epoch > 0
+      datasets.val is not None
+      and trainer.trainer_config.check_val_every_n_epoch > 0
       and epoch_idx % trainer.trainer_config.check_val_every_n_epoch == 0
     )
-    if run_validation:
+    if run_validation and datasets.val is not None:
       trainer.on_validation_epoch_start(epoch_idx)
       eval_metrics = _eval_model(
         eval_stepper=eval_step,

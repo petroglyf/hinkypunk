@@ -6,6 +6,23 @@ from jax_trainer.logger.metrics import (
   ImmutableMetrics,
   Metrics,
   MutableMetrics,
+  StepMetrics,
   get_metrics,
   update_metrics,
 )
+
+__all__ = [
+  "HostMetrics",
+  "ImmutableMetrics",
+  "LogFreq",
+  "LogMetricMode",
+  "LogMode",
+  "Logger",
+  "Metrics",
+  "MutableMetrics",
+  "StepMetrics",
+  "get_metrics",
+  "load_pytree",
+  "save_pytree",
+  "update_metrics",
+]

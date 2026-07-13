@@ -1,7 +1,8 @@
+"""Data structures for datasets."""
+from dataclasses import dataclass
 from typing import Generic, TypeVar
 
 from datasets import Dataset
-from flax.struct import dataclass
 from pydantic import BaseModel
 
 ConfigType = TypeVar("ConfigType", bound=BaseModel)

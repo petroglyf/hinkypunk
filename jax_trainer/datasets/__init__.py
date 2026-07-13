@@ -1,6 +1,13 @@
+"""Datasets module for JAX Trainer."""
 from jax_trainer.datasets.data_struct import DatasetModule
 from jax_trainer.datasets.dataset_constructor import (
-  HuggingFaceDatasetConfig,
   build_huggingface_dataset,
 )
-from jax_trainer.datasets.transforms import image_to_numpy, normalize_transform
+
+build_dataset_module = build_huggingface_dataset
+
+__all__ = [
+  "DatasetModule",
+  "build_dataset_module",
+  "build_huggingface_dataset",
+]

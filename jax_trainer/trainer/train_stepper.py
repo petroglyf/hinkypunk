@@ -33,7 +33,7 @@ class TrainStep:
     metrics: ImmutableMetrics | None,
     *,
     rngs: nnx.Rngs,
-  ) -> tuple[nnx.Optimizer, ImmutableMetrics]:
+  ) -> tuple[nnx.ModelAndOptimizer, ImmutableMetrics]:
     all_value_and_grad_out = nnx.value_and_grad(self.loss_function, has_aux=True)(
       model=optimizer_state.model,
       batch=model_kwargs,

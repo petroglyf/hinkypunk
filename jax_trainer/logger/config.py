@@ -36,3 +36,13 @@ class LoggerConfig(BaseModel):
   stderrthreshold: str = Field(
     default="warning", description="Threshold for logging to stderr."
   )
+
+  base_log_dir: str | None = Field(
+    default=None,
+    description="Base directory for auto-generating log_dir when log_dir is unset.",
+  )
+
+  model_log_dir: str | None = Field(
+    default=None,
+    description="Override the model name component of the auto-generated log path.",
+  )
