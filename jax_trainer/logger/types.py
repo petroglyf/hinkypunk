@@ -3,8 +3,8 @@
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+import altair as alt
 import numpy as np
-from plotly.graph_objects import Figure
 
 from jax_trainer.logger.metrics import HostMetrics
 
@@ -63,14 +63,14 @@ class LoggerType(ABC):
   def log_figure(
     self,
     tag: str,
-    figure: Figure,
+    figure: alt.Chart,
     global_step: int,
   ) -> None:
-    """Logs a matplotlib figure.
+    """Logs a Bokeh figure.
 
     Args:
         key: The key under which to log the figure.
-        figure: The matplotlib figure to log.
+        figure: The Bokeh figure to log.
         global_step: The current training step.
         log_postfix: An optional postfix to append to the tag.
     """
@@ -81,8 +81,8 @@ class LoggerType(ABC):
     self,
     tag: str,
     mat: np.ndarray,
-    metadata: list[str],
-    label_img: np.ndarray,
+    metadata: list[str] | None,
+    label_img: np.ndarray | None,
     global_step: int,
   ) -> None:
     """Logs an embedding.

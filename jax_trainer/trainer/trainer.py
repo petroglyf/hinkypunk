@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from typing import Any, Generic, TypeVar
 
 import jax
+import jax.numpy as jnp
 import yaml
 from flax import nnx
 from progress_table.progress_table import ProgressTable, TableProgressBar
@@ -57,7 +58,7 @@ class TrainerModule(Generic[ModelParamsType]):
 
     self.build_model(model_config)
     # Init trainer parts
-    # self.create_jitted_functions()
+    # self.create_jitted_functions()  # noqa: ERA001
     self.init_logger(self.trainer_config.logger)
     self.init_callbacks()
     self.checkpoint_manager = None
@@ -118,8 +119,8 @@ class TrainerModule(Generic[ModelParamsType]):
       model=self.model_config,
       optimizer=self.optimizer_config,
     )
-    LoggerClass = resolve_import(logger_config.class_name)
-    self.logger = LoggerClass(logger_config, self.model_config.name)
+    logger_class = resolve_import(logger_config.class_name)
+    self.logger = logger_class(logger_config, self.model_config.name)
     # Log the hyperparams
     # hparams = flatten_configdict(all_config)
     # hparams = jax.tree_map(class_to_name, hparams)
@@ -132,16 +133,12 @@ class TrainerModule(Generic[ModelParamsType]):
     self.log_dir = log_dir
     self.trainer_config.logger.log_dir = log_dir
     os.makedirs(os.path.join(log_dir, "metrics/"), exist_ok=True)
-    # logging.get_absl_handler().use_absl_log_file(log_dir=log_dir, program_name="absl_logging")
-    # logging.set_verbosity(logger_config.log_file_verbosity)
-    # logging.set_stderrthreshold(logger_config.stderrthreshold)
+
     if not os.path.isfile(os.path.join(log_dir, "config.yaml")):
       yaml_str = yaml.dump(all_config.model_dump())
       with open(os.path.join(log_dir, "config.yaml"), "w") as f:
         f.write(yaml_str)
-    # if not os.path.isfile(os.path.join(log_dir, "exmp_input.pkl")):
-    #   save_pytree(self.exmp_input, os.path.join(log_dir, "exmp_input.pkl"))
-    
+
   def init_callbacks(self):
     """Initializes the callbacks defined in the trainer config."""
     self.callbacks = []
@@ -153,8 +150,6 @@ class TrainerModule(Generic[ModelParamsType]):
       # if callback_config.get("class_name", None) is not None:
       callback_class = resolve_import(callback_config.class_name)
       callback_class_config = callback_class.encapsulate_config(callback_config.options)
-      # else:
-      #   callback_class = getattr(callbacks, name)
       callback = callback_class(
         params_config=callback_class_config, callback_config=callback_config, trainer=self
       )
@@ -182,8 +177,6 @@ class TrainerModule(Generic[ModelParamsType]):
     self.lr_schedule = lr_schedule  # Save for logging
     # Initialize training state
     self.state = nnx.ModelAndOptimizer(self.model, optimizer, wrt=nnx.Param)
-    # self.state = self.state.replace(step=jnp.array(self.state.step))  # Convert to jnp.array for compiling.
-    # self.state = jax.device_put(self.state)
 
   def create_jitted_functions(self) -> None:
     """Creates jitted versions of the training and evaluation functions.
@@ -203,11 +196,11 @@ class TrainerModule(Generic[ModelParamsType]):
         train_donate_argnames.append("optimizer_state")
       self.train_step = nnx.jit(
         train_step,
-        # donate_argnames=["metrics"],
+        # donate_argnames=["metrics"],  # noqa: ERA001
       )
       self.eval_step = nnx.jit(
         eval_step,
-        # donate_argnames=["metrics"],  # Donate metrics to avoid copying.
+        # donate_argnames=["metrics"],  # Donate metrics to avoid copying.  # noqa: ERA001
       )
 
   def loss_function(
@@ -244,7 +237,7 @@ class TrainerModule(Generic[ModelParamsType]):
       )
     return iterator
 
-  def on_training_start(self):
+  def on_training_start(self) -> None:
     """Method called before training is started.
 
     Can be used for additional initialization operations etc.
@@ -253,7 +246,7 @@ class TrainerModule(Generic[ModelParamsType]):
     for callback in self.callbacks:
       callback.on_training_start()
 
-  def on_training_end(self):
+  def on_training_end(self) -> None:
     """Method called after training has finished.
 
     Can be used for additional logging or similar.
@@ -262,9 +255,25 @@ class TrainerModule(Generic[ModelParamsType]):
     for callback in self.callbacks:
       callback.on_training_end()
 
-  def on_training_epoch_start(self, epoch_idx: int):
-    """Method called at the start of each training epoch. Can be used for additional logging or
-    similar.
+  def continue_with_batch(self) -> bool: # pyrefly: ignore [bad-return]
+    """Determines if we're done with the batch."""
+
+  def on_train_step_start(self, model: nnx.Module, batch_data: dict[str, jax.Array], rngs: nnx.Rngs) -> dict[str, jnp.ndarray] | None:
+    """It is possible to use multiple passes on a batch to generate more data.
+
+    Use this function to translate batch input to something else useful.
+    """
+    return batch_data
+
+  def on_train_step_end(self, model: nnx.Module, batch_data: dict[str, jax.Array], rngs: nnx.Rngs) -> dict[str, jnp.ndarray] | None:
+    """It is possible to use multiple passes on a batch to generate more data.
+
+    Use this function to translate batch input to something else useful.
+    """
+    return None
+
+  def on_training_epoch_start(self, epoch_idx: int) -> None:
+    """Method called at the start of each training epoch. Can be used for additional logging or similar.
 
     Args:
         epoch_idx: Index of the training epoch that has started.
@@ -273,9 +282,8 @@ class TrainerModule(Generic[ModelParamsType]):
     for callback in self.callbacks:
       callback.on_training_epoch_start(epoch_idx)
 
-  def on_training_epoch_end(self, train_metrics: dict[str, Any], epoch_idx: int):
-    """Method called at the end of each training epoch. Can be used for additional logging or
-    similar.
+  def on_training_epoch_end(self, train_metrics: dict[str, Any], epoch_idx: int) -> None:
+    """Method called at the end of each training epoch. Can be used for additional logging or similar.
 
     Args:
         epoch_idx: Index of the training epoch that has finished.
@@ -284,9 +292,8 @@ class TrainerModule(Generic[ModelParamsType]):
     for callback in self.callbacks:
       callback.on_training_epoch_end(train_metrics, epoch_idx)
 
-  def on_validation_epoch_start(self, epoch_idx: int):
-    """Method called at the start of each validation epoch. Can be used for additional logging
-    or similar.
+  def on_validation_epoch_start(self, epoch_idx: int) -> None:
+    """Method called at the start of each validation epoch. Can be used for additional logging or similar.
 
     Args:
         epoch_idx: Index of the training epoch at which validation was started.
@@ -296,8 +303,7 @@ class TrainerModule(Generic[ModelParamsType]):
       callback.on_validation_epoch_start(epoch_idx)
 
   def on_validation_epoch_end(self, eval_metrics: dict[str, Any], epoch_idx: int) -> None:
-    """Method called at the end of each validation epoch. Can be used for additional logging
-    and evaluation.
+    """Method called at the end of each validation epoch. Can be used for additional logging and evaluation.
 
     Args:
         epoch_idx: Index of the training epoch at which validation was performed.
@@ -316,9 +322,8 @@ class TrainerModule(Generic[ModelParamsType]):
     ):
       self.checkpoint_manager.save_model(eval_metrics, epoch_idx)
 
-  def on_test_epoch_start(self, epoch_idx: int):
-    """Method called at the start of each test epoch. Can be used for additional logging or
-    similar.
+  def on_test_epoch_start(self, epoch_idx: int) -> None:
+    """Method called at the start of each test epoch. Can be used for additional logging or similar.
 
     Args:
         epoch_idx: Index of the training epoch at which testing was started.
@@ -327,7 +332,7 @@ class TrainerModule(Generic[ModelParamsType]):
     for callback in self.callbacks:
       callback.on_test_epoch_start(epoch_idx)
 
-  def on_test_epoch_end(self, test_metrics: dict[str, Any], epoch_idx: int):
+  def on_test_epoch_end(self, test_metrics: dict[str, Any], epoch_idx: int) -> None:
     """Method called at the end of each test epoch.
 
     Can be used for additional logging and evaluation.
@@ -354,8 +359,7 @@ class TrainerModule(Generic[ModelParamsType]):
     if state_dict is None:
       if raise_if_not_found:
         raise ValueError("No model checkpoint callback found in callbacks.")
-      else:
-        logging.warning("No model checkpoint callback found in callbacks.")
+      logging.warning("No model checkpoint callback found in callbacks.")
     else:
       self.restore(state_dict)
 

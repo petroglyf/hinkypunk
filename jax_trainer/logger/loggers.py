@@ -1,14 +1,22 @@
+"""Logger wrapping metric aggregation and dispatch to Tensorboard/Weights and Biases.
+
+Tracks train/val/test state across steps and epochs, aggregates metrics
+according to their configured log frequency (see jax_trainer.logger.metrics),
+and forwards scalars, images, figures, and embeddings to the underlying
+logging tool built by jax_trainer.logger.utils.build_tool_logger.
+"""
+
 import json
 import time
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import altair as alt
 import jax
 import jax.numpy as jnp
 import numpy as np
 from absl import logging
-from plotly.graph_objects import Figure
 
 from jax_trainer.logger.config import LoggerConfig
 from jax_trainer.logger.enums import LogFreq
@@ -191,10 +199,10 @@ class Logger:
 
   def end_epoch(
     self,
-    metrics: ImmutableMetrics,
+    metrics: ImmutableMetrics | None,
     *,
     save_metrics: bool = False,
-  ) -> tuple[ImmutableMetrics, HostMetrics]:
+  ) -> tuple[ImmutableMetrics | None, HostMetrics | None]:
     """Ends the current epoch and logs the epoch metrics.
 
     Args:
@@ -207,32 +215,34 @@ class Logger:
         step logging size. Otherwise, those will be reset as well. The metrics that are logged
         in this epoch will be returned as a separate dict.
     """
+    final_epoch_metrics = None
     self.log_epoch_scalar("time", time.time() - self.epoch_start_time)
-    metrics, epoch_metrics = get_metrics(
-      metrics, log_freq=LogFreq.EPOCH, reset_metrics=True,
-    )
-    epoch_metrics.update(self.epoch_metrics)
-    final_epoch_metrics = self._finalize_metrics(metrics=epoch_metrics)
-    self.log_metrics(
-      final_epoch_metrics,
-      step=self.epoch_idx,
-      log_postfix="epoch" if self.logging_mode == "train" else "",
-    )
-    if save_metrics:
-      self.save_metrics(
-        filename=f"{self.logging_mode}_epoch_{self.epoch_idx:04d}",
-        metrics=final_epoch_metrics,
+    if metrics:
+      metrics, epoch_metrics = get_metrics(
+        metrics, log_freq=LogFreq.EPOCH, reset_metrics=True,
       )
-    if (
-      self.logging_mode == "train"
-      and self.log_steps_every > 0
-      and self.epoch_step_count < self.log_steps_every
-    ):
-      logging.info(
-        "Training epoch has fewer steps than the logging frequency. Resetting step metrics.",
+      epoch_metrics.update(self.epoch_metrics)
+      final_epoch_metrics = self._finalize_metrics(metrics=epoch_metrics)
+      self.log_metrics(
+        final_epoch_metrics,
+        step=self.epoch_idx,
+        log_postfix="epoch" if self.logging_mode == "train" else "",
       )
-      metrics, _ = get_metrics(metrics, log_freq=LogFreq.STEP, reset_metrics=True)
-      self._reset_step_metrics()
+      if save_metrics:
+        self.save_metrics(
+          filename=f"{self.logging_mode}_epoch_{self.epoch_idx:04d}",
+          metrics=final_epoch_metrics,
+        )
+      if (
+        self.logging_mode == "train"
+        and self.log_steps_every > 0
+        and self.epoch_step_count < self.log_steps_every
+      ):
+        logging.info(
+          "Training epoch has fewer steps than the logging frequency. Resetting step metrics.",
+        )
+        metrics, _ = get_metrics(metrics, log_freq=LogFreq.STEP, reset_metrics=True)
+    self._reset_step_metrics()
     self._reset_epoch_metrics()
     return metrics, final_epoch_metrics
 
@@ -286,12 +296,12 @@ class Logger:
   def log_figure(
     self,
     key: str,
-    figure: Figure,
+    figure: alt.Chart,
     step: int | None = None,
     log_postfix: str = "",
     logging_mode: str | None = None,
   ) -> None:
-    """Logs a matplotlib figure to the tool of choice (e.g. Tensorboard/Wandb).
+    """Logs a Bokeh figure to the tool of choice (e.g. Tensorboard/Wandb).
 
     Args:
         key: Name of the figure.

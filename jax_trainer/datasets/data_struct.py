@@ -1,5 +1,6 @@
 """Data structures for datasets."""
 from dataclasses import dataclass
+from datasets.table import MemoryMappedTable
 from typing import Generic, TypeVar
 
 from datasets import Dataset
@@ -13,7 +14,7 @@ class DatasetModule(Generic[ConfigType]):
   """Data module class that holds the datasets and data loaders."""
 
   config: ConfigType
-  train: Dataset
-  test: Dataset
-  val: Dataset | None = None
+  train: MemoryMappedTable
+  test: MemoryMappedTable
+  val: MemoryMappedTable | None = None
   metadata: dict | None = None
