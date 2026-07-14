@@ -1,10 +1,11 @@
 [tool.poetry]
 name = "hinkypunk"
-version = "0.1.0"
+version = "0.1.1"
 description = "Lightning-like framework for JAX"
 authors = ["Nick DePalma <structure@fastmail.us>"]
 readme = "README.md"
-homepage = "https://github.com/ndepalma/jax-trainer"
+license = "MIT"
+homepage = "https://github.com/petroglyf/hinkypunk"
 packages = [{ include = "hinky" }]
 
 [tool.poetry.dependencies]
