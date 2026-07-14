@@ -2,7 +2,7 @@
 
 Iterates a training data loader for one epoch, invoking the JIT-compiled
 train_step per batch, updating the progress table, running per-step
-callbacks, and delegating metric aggregation/logging to jax_trainer.logger.
+callbacks, and delegating metric aggregation/logging to hinky.logger.
 """
 
 import logging
@@ -16,12 +16,12 @@ from flax import nnx
 from flax.core import FrozenDict
 from progress_table.progress_table import ProgressTable, TableProgressBar
 
-from jax_trainer.callbacks.callback import Callback
-from jax_trainer.logger import (
+from hinky.callbacks.callback import Callback
+from hinky.logger import (
   HostMetrics,
   ImmutableMetrics,
 )
-from jax_trainer.logger.loggers import Logger
+from hinky.logger.loggers import Logger
 
 from .train_stepper import TrainStep
 

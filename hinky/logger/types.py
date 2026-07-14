@@ -6,7 +6,7 @@ from pathlib import Path
 import altair as alt
 import numpy as np
 
-from jax_trainer.logger.metrics import HostMetrics
+from hinky.logger.metrics import HostMetrics
 
 
 class LoggerType(ABC):

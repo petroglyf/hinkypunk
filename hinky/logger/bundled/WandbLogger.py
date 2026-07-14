@@ -8,9 +8,9 @@ import numpy as np
 import wandb
 from PIL import Image
 
-from jax_trainer.logger.config import LoggerConfig
-from jax_trainer.logger.metrics import HostMetrics
-from jax_trainer.logger.types import LoggerType
+from hinky.logger.config import LoggerConfig
+from hinky.logger.metrics import HostMetrics
+from hinky.logger.types import LoggerType
 
 _logger = logging.getLogger(__name__)
 

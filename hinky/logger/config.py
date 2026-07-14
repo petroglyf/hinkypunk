@@ -5,7 +5,7 @@ class LoggerConfig(BaseModel):
   """Configuration for the Logger class."""
 
   class_name: str = Field(
-    "jax_trainer.logger.Logger", description="Name of the logger class to use."
+    "hinky.logger.Logger", description="Name of the logger class to use."
   )
   log_dir: str = Field(
     default="checkpoints/",

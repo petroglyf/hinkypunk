@@ -3,7 +3,7 @@
 Wraps a loss function into a callable that computes gradients via
 nnx.value_and_grad, applies them in place to an nnx.ModelAndOptimizer, and
 merges the resulting step metrics (optionally including gradient norms) into
-the running metrics dict via jax_trainer.logger.update_metrics.
+the running metrics dict via hinky.logger.update_metrics.
 """
 
 from collections.abc import Callable
@@ -14,7 +14,7 @@ import jax
 import optax
 from flax import nnx
 
-from jax_trainer.logger import (
+from hinky.logger import (
   ImmutableMetrics,
   LogFreq,
   LogMetricMode,

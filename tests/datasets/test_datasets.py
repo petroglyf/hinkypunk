@@ -1,7 +1,7 @@
 import unittest
 
-from jax_trainer.datasets import DatasetModule, build_dataset_module
-from jax_trainer.datasets.dataset_constructor import HuggingFaceDatasetConfig
+from hinky.datasets import DatasetModule, build_dataset_module
+from hinky.datasets.dataset_constructor import HuggingFaceDatasetConfig
 
 
 class TestBuildDatasets(unittest.TestCase):

@@ -3,8 +3,8 @@ import jax.numpy as jnp
 import optax
 from flax import nnx
 
-from jax_trainer.logger import LogFreq, LogMetricMode, LogMode, StepMetrics
-from jax_trainer.trainer.trainer import TrainerModule
+from hinky.logger import LogFreq, LogMetricMode, LogMode, StepMetrics
+from hinky.trainer.trainer import TrainerModule
 
 
 class ImgClassifierTrainer(TrainerModule):

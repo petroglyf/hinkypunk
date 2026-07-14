@@ -2,8 +2,8 @@ from typing import Generic, TypeVar
 
 from pydantic import BaseModel, Field
 
-from jax_trainer.callbacks.config import CallbackConfig
-from jax_trainer.logger.loggers import LoggerConfig
+from hinky.callbacks.config import CallbackConfig
+from hinky.logger.loggers import LoggerConfig
 
 ModelParamsConfigType = TypeVar("ModelParamsConfigType")
 

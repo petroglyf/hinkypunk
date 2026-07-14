@@ -1,4 +1,3 @@
-from jax_trainer.trainer.img_classifier import ImgClassifierTrainer
-from jax_trainer.trainer.trainer import TrainerModule
+from hinky.trainer.trainer import TrainerModule
 
-__all__ = ["ImgClassifierTrainer", "TrainerModule"]
+__all__ = ["TrainerModule"]

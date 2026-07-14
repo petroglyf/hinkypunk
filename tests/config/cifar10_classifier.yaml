@@ -57,7 +57,7 @@ optimizer:
     name: warmup_cosine_decay
     warmup_steps: 100
 dataset:
-  constructor: jax_trainer.datasets.build_cifar10_datasets
+  constructor: hinky.datasets.build_cifar10_datasets
   data_dir: data/
   batch_size: 128
   num_workers: 0

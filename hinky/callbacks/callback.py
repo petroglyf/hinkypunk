@@ -2,7 +2,7 @@
 
 from typing import Any, Generic, TypeVar
 
-from jax_trainer.callbacks.config import CallbackConfig
+from hinky.callbacks.config import CallbackConfig
 
 OptionsConfigtype = TypeVar("OptionsConfigtype", bound=CallbackConfig)
 

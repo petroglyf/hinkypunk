@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import numpy as np
 from flax.core.frozen_dict import FrozenDict, freeze, unfreeze
 
-from jax_trainer.logger.enums import LogFreq, LogMetricMode, LogMode
+from hinky.logger.enums import LogFreq, LogMetricMode, LogMode
 
 # Immutable metrics for compilation.
 ImmutableMetrics = FrozenDict[

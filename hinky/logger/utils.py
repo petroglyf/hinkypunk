@@ -1,7 +1,7 @@
 import os
 
-from jax_trainer.logger.config import LoggerConfig
-from jax_trainer.logger.types import LoggerType
+from hinky.logger.config import LoggerConfig
+from hinky.logger.types import LoggerType
 
 
 def get_logging_dir(logger_config: LoggerConfig, model_name: str) -> tuple[str, str | None]:
@@ -50,10 +50,10 @@ def build_tool_logger(logger_config: LoggerConfig, model_name: str) -> LoggerTyp
   # Create logger object
   logger_type = logger_config.tool.lower()
   if logger_type == "tensorboard":
-    from jax_trainer.logger.bundled.TensorBoardLogger import TensorBoardLogger  # noqa: PLC0415
+    from hinky.logger.bundled.TensorBoardLogger import TensorBoardLogger  # noqa: PLC0415
     logger = TensorBoardLogger(logger_config)
   elif logger_type == "wandb":
-    from jax_trainer.logger.bundled.WandbLogger import WandbLogger  # noqa: PLC0415
+    from hinky.logger.bundled.WandbLogger import WandbLogger  # noqa: PLC0415
     logger = WandbLogger(logger_config)
   else:
     raise ValueError(f"Unknown logger type {logger_type}.")

@@ -14,7 +14,7 @@ from numpy.typing import NDArray
 from PIL import Image
 from pydantic import BaseModel, Field
 
-from jax_trainer.datasets.data_struct import DatasetModule
+from hinky.datasets.data_struct import DatasetModule
 
 _logger = logging.getLogger(__name__)
 

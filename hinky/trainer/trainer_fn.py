@@ -8,8 +8,8 @@ import numpy as np
 from flax import nnx
 from progress_table.progress_table import ProgressTable
 
-from jax_trainer.datasets import DatasetModule
-from jax_trainer.logger import (
+from hinky.datasets import DatasetModule
+from hinky.logger import (
   HostMetrics,
   ImmutableMetrics,
 )

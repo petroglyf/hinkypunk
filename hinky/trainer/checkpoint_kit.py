@@ -7,11 +7,10 @@ from typing import Any, Generic, TypeVar
 import jax
 import orbax.checkpoint as ocp
 from absl import logging
-from jax_trainer.optimizer.config import OptimizerConfig
+from hinky.optimizer.config import OptimizerConfig
 
-# ML collections for config
-from jax_trainer.trainer.config import CheckpointConfig, ModelConfig, TrainerConfig
-from jax_trainer.utils import class_to_name
+from hinky.trainer.config import CheckpointConfig, ModelConfig, TrainerConfig
+from hinky.utils import class_to_name
 
 ModelParamsType = TypeVar("ModelParamsType")
 

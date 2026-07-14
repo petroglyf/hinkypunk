@@ -8,9 +8,9 @@ import numpy as np
 import optax
 from pydantic import BaseModel, Field
 
-from jax_trainer.callbacks.callback import Callback, CallbackConfig
+from hinky.callbacks.callback import Callback, CallbackConfig
 
-from jax_trainer.trainer.trainer import TrainerModule
+from hinky.trainer.trainer import TrainerModule
 
 _logger = logging.getLogger(__name__)
 

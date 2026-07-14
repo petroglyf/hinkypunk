@@ -1,9 +1,9 @@
 """Logger wrapping metric aggregation and dispatch to Tensorboard/Weights and Biases.
 
 Tracks train/val/test state across steps and epochs, aggregates metrics
-according to their configured log frequency (see jax_trainer.logger.metrics),
+according to their configured log frequency (see hinky.logger.metrics),
 and forwards scalars, images, figures, and embeddings to the underlying
-logging tool built by jax_trainer.logger.utils.build_tool_logger.
+logging tool built by hinky.logger.utils.build_tool_logger.
 """
 
 import json
@@ -18,10 +18,10 @@ import jax.numpy as jnp
 import numpy as np
 from absl import logging
 
-from jax_trainer.logger.config import LoggerConfig
-from jax_trainer.logger.enums import LogFreq
-from jax_trainer.logger.metrics import HostMetrics, ImmutableMetrics, get_metrics
-from jax_trainer.logger.utils import build_tool_logger
+from hinky.logger.config import LoggerConfig
+from hinky.logger.enums import LogFreq
+from hinky.logger.metrics import HostMetrics, ImmutableMetrics, get_metrics
+from hinky.logger.utils import build_tool_logger
 
 
 class Logger:

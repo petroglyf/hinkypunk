@@ -12,15 +12,15 @@ from flax import nnx
 from progress_table.progress_table import ProgressTable, TableProgressBar
 from pydantic import create_model
 
-from jax_trainer.datasets import DatasetModule
-from jax_trainer.datasets.dataset_constructor import HuggingFaceDatasetConfig
-from jax_trainer.logger import ImmutableMetrics
-from jax_trainer.logger.config import LoggerConfig
-from jax_trainer.optimizer.config import OptimizerConfig
-from jax_trainer.optimizer.optimizer_constructor import OptimizerBuilder
-from jax_trainer.trainer.checkpoint_kit import ModelCheckpoint
-from jax_trainer.trainer.config import ModelConfig, TrainerConfig
-from jax_trainer.utils import resolve_import
+from hinky.datasets import DatasetModule
+from hinky.datasets.dataset_constructor import HuggingFaceDatasetConfig
+from hinky.logger import ImmutableMetrics
+from hinky.logger.config import LoggerConfig
+from hinky.optimizer.config import OptimizerConfig
+from hinky.optimizer.optimizer_constructor import OptimizerBuilder
+from hinky.trainer.checkpoint_kit import ModelCheckpoint
+from hinky.trainer.config import ModelConfig, TrainerConfig
+from hinky.utils import resolve_import
 
 ModelParamsType = TypeVar("ModelParamsType")
 

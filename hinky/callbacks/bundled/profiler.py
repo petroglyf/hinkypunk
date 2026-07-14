@@ -6,8 +6,8 @@ import jax
 from absl import logging
 from pydantic import BaseModel, Field
 
-from jax_trainer.callbacks.callback import Callback, CallbackConfig
-from jax_trainer.trainer.trainer import TrainerModule
+from hinky.callbacks.callback import Callback, CallbackConfig
+from hinky.trainer.trainer import TrainerModule
 
 
 class JAXConfig(BaseModel):

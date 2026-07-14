@@ -3,7 +3,7 @@ from typing import Any
 
 import optax
 
-from jax_trainer.optimizer.config import (
+from hinky.optimizer.config import (
   AdamParams,
   AdamwParams,
   CosineDecaySchedulerParams,

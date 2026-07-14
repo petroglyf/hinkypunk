@@ -10,7 +10,7 @@ import jax.numpy as jnp
 from flax import nnx
 from flax.core import FrozenDict
 
-from jax_trainer.logger import (
+from hinky.logger import (
   ImmutableMetrics,
   Metrics,
   update_metrics,
