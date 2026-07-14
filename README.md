@@ -6,15 +6,15 @@ This repository is a work in progress and originally begun as a fork of `phlippe
 
 For handling hyperparameters, this repository makes use of [ml-collections](https://ml-collections.readthedocs.io/en/latest/). This library provides a hierarchical configuration system, which is used to configure the `TrainerModule` and the callbacks.
 
-For an example usage, see our [template repository](https://github.com/phlippe/jax_trainer_template).
+For an example usage, see our [template repository](https://github.com/phlippe/hinky_template).
 
 ## Installation
 
 In future, the package will be available on PyPI. For now, you can install it from source:
 
 ```bash
-git clone https://github.com/ndepalma/jax_trainer.git
-cd jax_trainer
+git clone https://github.com/petroglyf/hinky.git
+cd hinky
 pip install -e .
 ```
 
@@ -24,7 +24,7 @@ In the following, we will go through the main API choices in the library. In mos
 
 ### TrainerModule API
 
-The `jax_trainer.trainer.TrainerModule` has been written with the goal to be as flexible as possible while still providing a simple API for training and evaluation. It's main functions are configurable via `ConfigDict`s and can be overwritten by the user.
+The `hinky.trainer.TrainerModule` has been written with the goal to be as flexible as possible while still providing a simple API for training and evaluation. It's main functions are configurable via `ConfigDict`s and can be overwritten by the user.
 
 The main aspects of the trainer is to:
 
@@ -67,7 +67,7 @@ The `metrics` dictionary returned by the loss function is used for logging. By d
 
 Further, the logging of each metric can be customized by providing additional options in the `metrics` dictionary. For each metric, the following options are available:
 
-- `mode`: The mode of the metric describes how it should be aggregated over the epoch or batches. The different options are summarized in the `jax_trainer.logger.LogMetricMode` enum. Currently, the following modes are available:
+- `mode`: The mode of the metric describes how it should be aggregated over the epoch or batches. The different options are summarized in the `hinky.logger.LogMetricMode` enum. Currently, the following modes are available:
   - `LogMetricMode.MEAN`: The mean of the metric is logged.
   - `LogMetricMode.SUM`: The sum of the metric is logged.
   - `LogMetricMode.SINGLE`: A single value of the metric is used, namely the last one logged.
@@ -75,11 +75,11 @@ Further, the logging of each metric can be customized by providing additional op
   - `LogMetricMode.MIN`: The min of the metric is logged.
   - `LogMetricMode.STD`: The standard deviation of the mtric is logged.
   - `LogMetricMode.CONCAT`: The values of the metric are concatenated. Note that in this case, the metric is not logged to the tool of choice (e.g. Tensorboard or WandB), but is only provided in the full metric dictionary, which can be used as input to callbacks.
-- `log_freq`: The frequency of logging the metric. The options are summarized in `jax_trainer.logger.LogFreq` and are the following:
+- `log_freq`: The frequency of logging the metric. The options are summarized in `hinky.logger.LogFreq` and are the following:
   - `LogFreq.EPOCH`: The metric is logged only once per epoch.
   - `LogFreq.STEP`: The metric is logged only per *N* steps.
   - `LogFreq.ANY`: The metric is logged both per epoch and per *N* steps.
-- `log_mode`: The training mode in which the metric should be logged. This allows for different metrics to be logged during training, validation and/or testing. The options are summarized in the enum `jax_trainer.logger.LogMode` with the options:
+- `log_mode`: The training mode in which the metric should be logged. This allows for different metrics to be logged during training, validation and/or testing. The options are summarized in the enum `hinky.logger.LogMode` with the options:
   - `LogMode.TRAIN`: The metric is logged during training.
   - `LogMode.VAL`: The metric is logged during validation.
   - `LogMode.TEST`: The metric is logged during testing.
@@ -111,7 +111,7 @@ For configuring the callbacks, also for custom callbacks, see the configuration 
 
 ### Dataset API
 
-The dataset API abstracts the data loading with PyTorch, using numpy arrays for storage. Each dataset needs to provide a train, validation and test loader. As return type, we use `flax.struct.dataclass`es, which are similar to PyTorch's `NamedTuple`s. These dataclasses can be used in jit-compiled functions and are therefore a good fit for JAX. Additionally, each batch should define a `size` attribute, which is used for taking the correct average across batches in evaluation. For an example, see the `jax_trainer.datasets.examples` module.
+The dataset API abstracts the data loading with PyTorch, using numpy arrays for storage. Each dataset needs to provide a train, validation and test loader. As return type, we use `flax.struct.dataclass`es, which are similar to PyTorch's `NamedTuple`s. These dataclasses can be used in jit-compiled functions and are therefore a good fit for JAX. Additionally, each batch should define a `size` attribute, which is used for taking the correct average across batches in evaluation. For an example, see the `hinky.datasets.examples` module.
 
 ## Configuration
 
@@ -163,7 +163,7 @@ optimizer:
     name: warmup_cosine_decay
     warmup_steps: 100
 dataset:
-  constructor: jax_trainer.datasets.build_cifar10_datasets
+  constructor: hinky.datasets.build_cifar10_datasets
   data_dir: data/
   batch_size: 128
   num_workers: 4
@@ -200,7 +200,7 @@ The `trainer` section configures the `TrainerModule` and the callbacks. The `Tra
   - `log_file_verbosity` (optional): Verbosity of the logging file. Possible values are `debug`, `info`, `warning`, and `error`. By default, the verbosity is set to `info`.
   - `stderrthreshold` (optional): Verbosity of the logging to stderr. Possible values are `debug`, `info`, `warning`, and `error`. By default, the verbosity is set to `warning`.
 
-The `callbacks` section configures the callbacks. The key of a callback is its name (if its a default one in `jax_trainer`) or arbitrary description. In case of the latter, the attrbitue `class` needs to be added, with the respective class path, e.g. `class: mymodule.MyCallback`. Each callback has its own config and parameters. The following callbacks are pre-defined:
+The `callbacks` section configures the callbacks. The key of a callback is its name (if its a default one in `hinky`) or arbitrary description. In case of the latter, the attrbitue `class` needs to be added, with the respective class path, e.g. `class: mymodule.MyCallback`. Each callback has its own config and parameters. The following callbacks are pre-defined:
 
 - `ModelCheckpoint`: Saves the model and optimizer state after validation.
   - `monitor` (optional): Metric to monitor (default: `val/loss`).

@@ -2,8 +2,8 @@ import unittest
 
 import optax
 
-from jax_trainer.optimizer import OptimizerBuilder
-from jax_trainer.optimizer.config import (
+from hinky.optimizer import OptimizerBuilder
+from hinky.optimizer.config import (
     AdamParams,
     AdamwParams,
     ConstantSchedulerParams,
