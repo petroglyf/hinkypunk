@@ -10,22 +10,26 @@ packages = [{ include = "hinky" }]
 
 [tool.poetry.dependencies]
 python = ">=3.10"
+cyclopts = ">=4.20"
 jax = ">=0.4.13"
 jaxlib = ">=0.4.13"
 numpy = "*"
 altair = ">=6.2.0"
-tensorboard = ">=2.13.0"
-tensorboardX = "*"
+tensorboard = {version = ">=2.13.0", optional = true}
+tensorboardX = {version = "*", optional = true}
 optax = ">=0.2.5"
 orbax-checkpoint = ">=0.11.19"
 flax = ">=0.7.0"
 pydantic = ">=2.12.5"
-pydantic-yaml = ">=1.6.0"
 datasets = ">=4.8.5"
 progress_table = "*"
 dltype = "*"
-wandb = ">=0.28.0"
+wandb = {version = ">=0.28.0", optional = true}
 numba = ">=0.66.0"
+
+[tool.poetry.extras]
+tensorboard = ["tensorboard", "tensorboardX"]
+wandb = ["wandb"]
 
 [tool.pyrefly]
 project-includes = ["**/*.py*"]

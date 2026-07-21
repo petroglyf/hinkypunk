@@ -1,15 +1,23 @@
 """Datasets module for JAX Trainer."""
-from hinky.datasets.data_struct import DatasetModule
-from hinky.datasets.dataset_constructor import (
-  build_huggingface_dataset,
+from hinky.datasets.data_struct import (
+  CachedDatasetConfig,
+  DatasetModule,
+  FullDatasetSpecification,
   HuggingFaceDatasetConfig,
+  PrepareDatasetConfig,
+  TrainingDatasetConfig,
 )
-
-build_dataset_module = build_huggingface_dataset
+from hinky.datasets.dataset_initialization import cache_dataset, get_dataset, pull_dataset, split_dataset
 
 __all__ = [
+  "CachedDatasetConfig",
   "DatasetModule",
+  "FullDatasetSpecification",
   "HuggingFaceDatasetConfig",
-  "build_dataset_module",
-  "build_huggingface_dataset",
+  "PrepareDatasetConfig",
+  "TrainingDatasetConfig",
+  "cache_dataset",
+  "get_dataset",
+  "pull_dataset",
+  "split_dataset",
 ]

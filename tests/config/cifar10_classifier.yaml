@@ -60,4 +60,3 @@ dataset:
   constructor: hinky.datasets.build_cifar10_datasets
   data_dir: data/
   batch_size: 128
-  num_workers: 0

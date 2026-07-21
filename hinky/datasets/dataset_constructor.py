@@ -1,37 +1,20 @@
 """Construct a dataset from the dataset specifications."""
 
+
 import io
 import logging
-from typing import Annotated, Any, Final, TypeVar
+from functools import partial
 
-import jax
-import jax.numpy as jnp
 import numpy as np
 import pyarrow as pa
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets.table import InMemoryTable
 from numba import njit
 from numpy.typing import NDArray
 from PIL import Image
-from pydantic import BaseModel, Field
 
-from hinky.datasets.data_struct import DatasetModule
+from hinky.datasets.data_struct import DatasetModule, PermissibleHFTables, PrepareDatasetConfig
 
 _logger = logging.getLogger(__name__)
-
-DESIRED_SQUARE_RESOLUTION: Final[int] = 200
-
-class HuggingFaceDatasetConfig(BaseModel):
-  batch_size: Annotated[int, Field(frozen=True, gt=1)]
-  class_names: list[str] = Field(default_factory=list)
-  normalize_column: bool = False
-  pad_images_size: int | None = None
-  create_validation_set: bool = False
-  num_workers: int = 0
-  hf_dataset_uri: str
-  limit_to: int | None = None
-
-
-T = TypeVar("T", bound=HuggingFaceDatasetConfig)
 
 @njit
 def __normalize_image(all_images: NDArray) -> NDArray:
@@ -49,19 +32,17 @@ def _normalize_ds(image_tensor: NDArray) -> NDArray:
     normalized_image_np[beg:end] = __normalize_image(image_tensor[beg:end])
   return normalized_image_np
 
-def normalize_ds(ds: Dataset) -> Dataset | DatasetDict:
+def normalize_ds(ds: PermissibleHFTables) -> PermissibleHFTables:
   """Calculate mean and std on train data."""
-  # pyrefly: ignore [missing-attribute]
-  np_ro_data_in = ds.column("image").combine_chunks().to_numpy_ndarray()
+  np_ro_data_in = ds["image"].combine_chunks().to_numpy_ndarray()
   _ = _normalize_ds(np_ro_data_in)
 
   return ds
 
-
-def _pad_and_resize_image(image_in: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
-  image = jnp.array(np.array(Image.open(io.BytesIO(image_in["bytes"]))))
-  height = image.shape[0]
-  width = image.shape[1]
+def _pad_and_resize_image(image_in: dict[str, bytes | str], desired_square_resolution: int) -> tuple[np.ndarray, list[float]]:
+  pil_image = Image.open(io.BytesIO(image_in["bytes"])) # pyrefly: ignore [bad-argument-type]
+  height = pil_image.height
+  width = pil_image.width
 
   pad_height = pad_width = max_dim = 0
   if height > width:
@@ -71,108 +52,92 @@ def _pad_and_resize_image(image_in: dict[str, Any]) -> tuple[np.ndarray, np.ndar
     max_dim = width
     pad_width = 0
 
-  perc = 1.0 / (max_dim / DESIRED_SQUARE_RESOLUTION)
+  perc = 1.0 / (max_dim / desired_square_resolution)
   dest_width = int(width*perc)
   dest_height = int(height*perc)
   if height > width:
-    pad_width = (DESIRED_SQUARE_RESOLUTION - dest_width) // 2
+    pad_width = (desired_square_resolution - dest_width) // 2
   else:
-    pad_height = (DESIRED_SQUARE_RESOLUTION - dest_height) // 2
+    pad_height = (desired_square_resolution - dest_height) // 2
 
-  image_out = jax.image.resize(
-    image,
-    shape=(dest_height, dest_width, 3),
-    method="bilinear",
+  image_resized = pil_image.resize(
+    size=(dest_width, dest_height),
+    resample=Image.Resampling.BILINEAR,
   )
 
-  image_out = jnp.pad(
-    image_out,
-    ((pad_height, DESIRED_SQUARE_RESOLUTION - dest_height - pad_height), 
-      (pad_width, DESIRED_SQUARE_RESOLUTION - dest_width - pad_width), 
-      (0, 0)),
-    mode="constant",
-  )
+  image_out = Image.new(pil_image.mode, (desired_square_resolution, desired_square_resolution), (0,0,0))
+  image_out.paste(im=image_resized, box=(pad_width, pad_height))
+  np_im = np.asarray(image_out)
 
-  return np.array(image_out, dtype=np.uint8), np.array([perc, pad_width, pad_height], dtype=np.float32)
+  return np_im, [perc, pad_width, pad_height]
 
-def pad_and_resize_image(ds: Dataset, which_set: str) -> pa.Table:
+def pad_and_resize_image(ds: PermissibleHFTables, square_resolution:int, which_set: str) -> InMemoryTable:
   """Pad and resize images in the dataset."""
   _logger.info(_ := f"Padding and resizing images in {which_set}...")
+
   ds_pd = ds.to_pandas()
-  # pyrefly: ignore [bad-index, no-matching-overload]
-  images_params_proc = ds_pd["image"].map(_pad_and_resize_image)
-  images_np = np.stack([i[0] for i in images_params_proc])
-  params_np = np.stack([i[1] for i in images_params_proc])
+  pad_and_resize_with = partial(_pad_and_resize_image, desired_square_resolution=square_resolution)
+  images_params_proc = ds_pd["image"].map(pad_and_resize_with)
+  params_np = np.stack([i[1] for i in images_params_proc], dtype=np.float32)
 
-  table_out = ds.data
-  p_image_array = pa.FixedShapeTensorArray.from_numpy_ndarray(images_np)
-  p_params_array = pa.FixedShapeTensorArray.from_numpy_ndarray(params_np)
+  table_out = ds.table
+
+  np_image_array = np.stack([i[0] for i in images_params_proc])
+  arrow_image_array = pa.FixedShapeTensorArray.from_numpy_ndarray(np_image_array)
+  arrow_params_array = pa.FixedSizeListArray.from_arrays(pa.array(params_np.flatten()), params_np.shape[1])
   table_out = table_out.drop("image")
-  table_out = table_out.append_column("image", p_image_array)
-  table_out = table_out.append_column("params", p_params_array)
-  return table_out
+  table_out = table_out.append_column("image", arrow_image_array)
+  table_out = table_out.append_column("params", arrow_params_array)
+  return InMemoryTable(table=table_out)
 
 
-def build_huggingface_dataset(dataset_config: T) -> DatasetModule:
-  """Get a dataset from huggingface."""
-  ds_train: Dataset = load_dataset(dataset_config.hf_dataset_uri, split="train")  # type: ignore[reportAssignmentType]
-  ds_test: Dataset = load_dataset(dataset_config.hf_dataset_uri, split="validation")  # type: ignore[reportAssignmentType]
-  ds_train.set_format(type="jax")
-  ds_test.set_format(type="jax")
-
-  ds_train.shuffle()
-  ds_test.shuffle()
-
-  ds_validation: Dataset | None = None
-  if dataset_config.create_validation_set:
-    # pyrefly: ignore [bad-assignment]
-    split_test_set: Dataset = ds_test.train_test_split(test_size=0.3, load_from_cache_file=False)
-
-    # pyrefly: ignore [bad-assignment]
-    ds_test = split_test_set["test"]
-    ds_test.flatten_indices(keep_in_memory=True)
-
-    # pyrefly: ignore [bad-assignment]
-    ds_validation = split_test_set["train"]
-    # pyrefly: ignore [missing-attribute]
-    ds_validation.flatten_indices(num_proc=8, keep_in_memory=True)
-
-
-  if dataset_config.limit_to is not None:
-    ds_train = ds_train.take(dataset_config.limit_to)
-    ds_test = ds_test.take(dataset_config.limit_to)
-    if ds_validation is not None:
-      ds_validation = ds_validation.take(dataset_config.limit_to)
-
+def process_dataset(dataset: DatasetModule, process_config: PrepareDatasetConfig) -> DatasetModule:
+  """Process the dataset and modify as requested."""
+  tbl_train = dataset.train
+  tbl_test = dataset.test
+  tbl_val = dataset.val
 
   # Ensure the size of the images are consistent and pad them if necessary. This is required for batching.
-  ds_train = pad_and_resize_image(ds_train, "training set")
-  ds_test = pad_and_resize_image(ds_test, "test set")
-  ds_validation = (
-    pad_and_resize_image(ds_validation, "val set")
-    if ds_validation is not None
-    else None
-  )
+  if process_config.pad_and_resize:
+    tbl_train = pad_and_resize_image(tbl_train, process_config.desired_square_resolution, "training set")
+    tbl_test = pad_and_resize_image(tbl_test, process_config.desired_square_resolution, "test set")
+    tbl_val = (
+      pad_and_resize_image(tbl_val, process_config.desired_square_resolution, "val set")
+      if tbl_val is not None
+      else None
+    )
 
   # Normalize the images
-  if dataset_config.normalize_column:
-    # pyrefly: ignore [bad-argument-type, bad-assignment]
-    ds_train = normalize_ds(ds_train)
-    # pyrefly: ignore [bad-argument-type, bad-assignment]
-    ds_test = normalize_ds(ds_test)
+  if process_config.normalize_column:
+    tbl_train = normalize_ds(tbl_train)
+    tbl_test = normalize_ds(tbl_test)
 
-    ds_validation = (
-      normalize_ds(ds_validation) # pyrefly: ignore [bad-argument-type, bad-assignment]
-      if ds_validation is not None
+    tbl_val = (
+      normalize_ds(tbl_val)
+      if tbl_val is not None
       else None
     )
 
   return DatasetModule(
-    dataset_config,
-    # pyrefly: ignore [bad-argument-type]
-    ds_train,
-    # pyrefly: ignore [bad-argument-type]
-    ds_test,
-    # pyrefly: ignore [bad-argument-type]
-    ds_validation,
+    config=dataset.config,
+    train=tbl_train,
+    test=tbl_test,
+    val=tbl_val,
   )
+
+# def build_huggingface_dataset(dataset_config: FullDatasetSpecification) -> DatasetModule:
+#   """Get a dataset from huggingface."""
+#   initial_dataset = get_dataset(
+#     source_config=dataset_config.training_params, 
+#     input_dir=dataset_config.source.cache_path if isinstance(dataset_config.source, CachedDatasetConfig) else None,
+#     )
+#   if dataset_config.training_params.limit_to is not None:
+#     ds_train = tbl_train.take(dataset_config.training_params.limit_to)
+#     ds_test = tbl_test.take(dataset_config.training_params.limit_to)
+#     if tbl_val is not None:
+#       ds_validation = tbl_val.take(dataset_config.training_params.limit_to)
+#   minified_dataset = DatasetModule(
+#     train=ds_train.
+#   )
+#   processed_dataset = process_dataset(initial_dataset, dataset_config.preparation)
+#   return processed_dataset

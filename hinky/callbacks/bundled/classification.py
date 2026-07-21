@@ -64,7 +64,7 @@ class ConfusionMatrixCallback(Callback):
     """
     super().__init__(callback_config)
     self.log_dir = trainer.trainer_config.logger.log_dir
-    self.class_names = trainer.dataset_config.class_names
+    self.class_names = trainer.dataset_config.training_params.class_names
     self.cf_config = params_config
     self.trainer = trainer
 

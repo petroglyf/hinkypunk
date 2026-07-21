@@ -4,7 +4,7 @@ import logging
 import time
 from collections.abc import Callable, Iterator
 from typing import Any, Final
-
+from pyarrow import Table
 import jax
 import jax.numpy as jnp
 from flax import nnx
@@ -78,7 +78,7 @@ class EvalStep:
   def test_eval_function(
     self,
     trainer: TrainerModule[Any],
-    val_loader: Iterator,
+    val_loader: Table,
     *,
     rngs: nnx.Rngs,
   ) -> None:
@@ -97,7 +97,7 @@ class EvalStep:
         val_loader: Data loader of the validation set.
     """
     _logger.info("Verifying evaluation function...")
-    val_batch = trainer.batch_to_input(next(val_loader))
+    val_batch = trainer.batch_to_input(val_loader.slice(0,1))
     eval_metrics = self.init_eval_metrics(
       optimizer_and_model=trainer.state,
       batch=val_batch,
