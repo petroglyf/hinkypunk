@@ -10,10 +10,11 @@ import jax.numpy as jnp
 import yaml
 from flax import nnx
 from progress_table.progress_table import ProgressTable, TableProgressBar
+from pyarrow import Table
 from pydantic import create_model
 
 from hinky.datasets import DatasetModule
-from hinky.datasets.dataset_constructor import HuggingFaceDatasetConfig
+from hinky.datasets.data_struct import FullDatasetSpecification
 from hinky.logger import ImmutableMetrics
 from hinky.logger.config import LoggerConfig
 from hinky.optimizer.config import OptimizerConfig
@@ -31,7 +32,7 @@ class TrainerModule(Generic[ModelParamsType]):
     trainer_config: TrainerConfig,
     model_config: ModelConfig[ModelParamsType],
     optimizer_config: OptimizerConfig,
-    dataset_config: HuggingFaceDatasetConfig,
+    dataset_config: FullDatasetSpecification,
     dataset: DatasetModule,
   ) -> None:
     """A basic Trainer module for logging, model initialization, training loop, and callbacks.
@@ -69,7 +70,7 @@ class TrainerModule(Generic[ModelParamsType]):
         trainer=self,
       )
 
-  def batch_to_input(self, batch: dict[str, jax.Array]) -> dict[str, Any]:
+  def batch_to_input(self, batch: Table) -> dict[str, Any]:
     raise NotImplementedError
 
   def prepare_rngs(self) -> None:

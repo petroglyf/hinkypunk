@@ -1,3 +1,4 @@
+from hinky.datasets.data_struct import PermissibleArrowTables
 import logging
 from collections.abc import Callable, Iterator
 from itertools import chain
@@ -96,10 +97,10 @@ def _get_step_fns(
 ]:
   train_step = TrainStep(
     trainer.loss_function,
-    trainer.dataset_config.batch_size,
+    trainer.dataset_config.training_params.batch_size,
     log_grad_norm=trainer.trainer_config.log_grad_norm,
   )
-  eval_step = EvalStep(trainer.loss_function, trainer.dataset_config.batch_size)
+  eval_step = EvalStep(trainer.loss_function, trainer.dataset_config.training_params.batch_size)
   if compile:
     _logger.info("Jitting train_step and eval_step...")
     train_donate_argnames = ["metrics"]  # Donate metrics to avoid copying.
@@ -114,7 +115,7 @@ def _get_step_fns(
 
 def train_model(
   trainer: TrainerModule[Any],
-  datasets: DatasetModule[Any],
+  ds_tables: DatasetModule[Any, PermissibleArrowTables],
   num_epochs: int = 500,
 ) -> dict[str, Any]:
   """Starts a training loop for the given number of epochs.
@@ -130,7 +131,7 @@ def train_model(
       best model on the validation set.
   """
   # Create optimizer and the scheduler for the given number of epochs
-  trainer.init_optimizer(num_epochs, len(datasets.train))
+  trainer.init_optimizer(num_epochs, len(ds_tables.train))
   train_step_call, eval_step_call, eval_step = _get_step_fns(
     trainer, not trainer.trainer_config.debug
   )
@@ -148,8 +149,11 @@ def train_model(
   )
   # Prepare training loop
   trainer.on_training_start()
-  if datasets.val:
-    eval_step.test_eval_function(trainer, iter(datasets.val), rngs=trainer.rngs_eval)
+  if ds_tables.val:
+    val_tbl = ds_tables.val
+    # val_ds.set_format("numpy")
+    # val_ds = val_ds.cast_column("image", Image(decode=True))
+    eval_step.test_eval_function(trainer, val_tbl, rngs=trainer.rngs_eval)
   all_eval_metrics = {}
   train_metrics = None
   training_failed = False
@@ -160,9 +164,11 @@ def train_model(
   for epoch_idx in trainer.tracker(progress_table, iter(range(1, num_epochs + 1)), desc=""):
     progress_table["epoch"] = epoch_idx
     trainer.on_training_epoch_start(epoch_idx)
+    train_ds = Dataset(ds_tables.train)
+    train_ds.set_format("numpy")
     train_metrics, epoch_metrics = epoch_trainer(
       progress_table,
-      datasets.train.to_batches(max_chunksize=trainer.dataset_config.batch_size),
+      train_ds.to_batches(max_chunksize=trainer.dataset_config.training_params.batch_size),
       epoch_idx=epoch_idx,
       train_metrics=train_metrics,
       rngs=trainer.rngs_train,
@@ -180,17 +186,17 @@ def train_model(
     trainer.on_training_epoch_end(epoch_metrics, epoch_idx)
     # Validation every N epochs
     run_validation = (
-      datasets.val is not None
+      ds_tables.val is not None
       and trainer.trainer_config.check_val_every_n_epoch > 0
       and epoch_idx % trainer.trainer_config.check_val_every_n_epoch == 0
     )
-    if run_validation and datasets.val is not None:
+    if run_validation and ds_tables.val is not None:
       trainer.on_validation_epoch_start(epoch_idx)
       eval_metrics = _eval_model(
         eval_stepper=eval_step,
         callable_step=eval_step_call,
         trainer=trainer,
-        val_loader=iter(datasets.val),
+        val_loader=iter(ds_tables.val),
         mode="val",
         epoch_idx=epoch_idx,
         rngs=trainer.rngs_eval,

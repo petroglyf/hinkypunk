@@ -1,3 +1,4 @@
+import importlib.util
 import os
 
 from hinky.logger.config import LoggerConfig
@@ -21,7 +22,7 @@ def get_logging_dir(logger_config: LoggerConfig, model_name: str) -> tuple[str, 
   if not log_dir:
     base_log_dir = logger_config.base_log_dir
     if base_log_dir is None:
-      raise ValueError("LoggerConfig.base_log_dir must be set when log_dir is not provided.")
+      raise ValueError(_ := "LoggerConfig.base_log_dir must be set when log_dir is not provided.")
     # Prepare logging
     model_name = model_name.split(".")[-1] if logger_config.model_log_dir is None else logger_config.model_log_dir
     log_dir = os.path.join(base_log_dir, model_name)
@@ -45,16 +46,20 @@ def build_tool_logger(logger_config: LoggerConfig, model_name: str) -> LoggerTyp
   Returns:
       The logger tool object.
   """
-  # Determine logging directory
-  log_dir, version = get_logging_dir(logger_config, model_name)
   # Create logger object
   logger_type = logger_config.tool.lower()
   if logger_type == "tensorboard":
-    from hinky.logger.bundled.TensorBoardLogger import TensorBoardLogger  # noqa: PLC0415
-    logger = TensorBoardLogger(logger_config)
+    if importlib.util.find_spec("tensorboard") is None:
+      msg = "Tensorboard is not installed but LoggerConfig.tool='TensorBoard' was requested."
+      raise ImportError(msg)
+    tensorboard_logger = importlib.import_module("hinky.logger.bundled.TensorBoardLogger")
+    logger = tensorboard_logger.TensorBoardLogger(logger_config)
   elif logger_type == "wandb":
-    from hinky.logger.bundled.WandbLogger import WandbLogger  # noqa: PLC0415
-    logger = WandbLogger(logger_config)
+    if importlib.util.find_spec("wandb") is None:
+      msg = "WandB is not installed but LoggerConfig.tool='wandb' was requested."
+      raise ImportError(msg)
+    wandb_logger = importlib.import_module("hinky.logger.bundled.WandbLogger")
+    logger = wandb_logger.WandbLogger(logger_config)
   else:
-    raise ValueError(f"Unknown logger type {logger_type}.")
+    raise ValueError(_ := f"Unknown logger type {logger_type}.")
   return logger
